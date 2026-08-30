@@ -1,90 +1,72 @@
 ---
 name: agent-first-cli-design
-description: Design or audit stable CLI contracts for agents and automation. Use when the task centers on machine-readable I/O, non-interactive execution, streaming or bulk behavior, remote mutations, retries, or agent-specific safety. Do not load for ordinary help-text changes, internal implementation, or one-off shell use unless those contract concerns are central.
+description: Design or audit stable agent-facing CLI contracts. Use when creating or revising a CLI, especially machine I/O, streams, remote mutations, or repeated-call performance; not for copy-only help, internal implementation, or one-off shell use unless contract concerns apply.
 ---
 
 # Agent-First CLI Design
 
-## Premise
+Treat argv, stdin, stdout, stderr, and exit status as a public protocol. Design
+that protocol first and human rendering second; human-second does not mean
+human-hostile. Optimize the full agent loop, including repeated startup,
+context-bearing output, ambiguity, and recovery calls. Preserve established
+contracts unless the user requests migration.
 
-Treat a maintained CLI as a programmatic contract carried over arguments, stdin,
-stdout, stderr, and exit status. Design that contract first; human rendering is a
-second presentation of the same semantics.
+Read force precisely: invariants are mandatory; conditional mechanisms apply
+only when their failure mode exists; preferences remain tradeoffs.
 
-Agents pay repeatedly for process startup, output admitted to context, ambiguous
-state, and recovery calls. Optimize the observe-decide-invoke loop, while keeping
-the human interface clear and preserving established compatibility.
-
-Interpret modal language precisely:
-
-- **Must** marks an interoperability, correctness, or safety invariant.
-- **Apply when relevant** marks a mechanism whose failure mode is present.
-- **Prefer** marks a tradeoff, not a universal rule.
-
-## Workflow
+## Design
 
 1. Identify callers and compatibility constraints. Classify each command as a
-   scalar result, local stream, materialized/remote collection, mutation, or
-   long-running operation.
-2. Define the observable contract before presentation:
-
-   ```text
-   command | inputs | stdout/stderr | exit states | side effects
-           | ordering/bounds | cancellation/retry | compatibility
-   ```
-
-   Keep only columns relevant to the command.
-3. Implement one semantic operation beneath machine and human renderers. TTY
-   detection may select presentation, never targets, permissions, or side
-   effects.
-4. Verify the built executable with pipes and no TTY. Benchmark only when a
-   product budget, regression-sensitive path, or repeated-agent workload makes
-   performance material; establish a baseline before proposing numeric gates.
+   scalar, local stream, remote collection, mutation, or long-running operation.
+2. Specify only relevant contract fields: inputs; stdout/stderr; exit states;
+   side effects; ordering/bounds; cancellation/retry; compatibility.
+3. Put one semantic operation beneath machine and human renderers. TTY detection
+   changes presentation only. Test the built executable through pipes/no TTY and
+   relevant failure paths.
 
 ## Invariants
 
-- Machine output is a documented public interface. Never require agents to parse
-  human tables, colors, cursor movement, prompts, or localized prose.
-- Stdout carries requested results; stderr carries diagnostics and separately
-  requested progress. Explicit raw-payload mode preserves bytes exactly.
-- Interaction is declared. A non-interactive invocation never opens a pager,
-  browser, editor, credential flow, or undeclared stdin prompt.
-- Exit status is a small typed channel. Keep operational failure distinguishable
-  from documented result states, and expose stable machine error codes when
-  callers need richer branching.
-- Mutations report truthful outcomes, including partial or unknown application.
-  Never imply rollback, idempotence, or successful cancellation without proof.
-- Bound work that buffers results or can fan out into unbounded remote requests.
-  A local forward-only stream may be exhaustive by default when it supports
-  backpressure and cancellation.
-- Never interpolate untrusted values into a shell command. Keep untrusted domain
-  data structurally distinct from tool-authored diagnostics or suggested action.
-- Keep cheap, repeated paths free of unrelated network, credential, plugin,
+- Publish stable machine output; never require parsing human tables, colors,
+  cursor movement, prompts, or localized prose.
+- Stdout is requested data; stderr is diagnostics or separately requested
+  progress. Explicit raw mode preserves bytes exactly.
+- Non-interactive behavior is declared and never opens an implicit prompt, pager,
+  browser, editor, or credential flow.
+- Treat exit status as a typed channel: distinguish operational failure from
+  documented result states; add stable error codes when callers branch on them.
+- Report partial or unknown mutation outcomes truthfully. Never imply rollback,
+  idempotence, or successful cancellation without proof.
+- Bound buffering and remote fan-out; do not truncate a forward-only local stream
+  that supports backpressure and cancellation.
+- Keep untrusted data distinct from tool-authored instructions and out of
+  interpolated shell text. Keep secrets out of argv and URLs.
+- Keep cheap repeated paths free of unrelated network, credential, plugin,
   repository, update, or telemetry initialization.
 
-Do not add pagination, schema-discovery commands, idempotency keys, durable
-operations, approval artifacts, locks, daemons, or audit storage without a
-concrete caller or failure mode.
+Use pagination, schema discovery, idempotency keys, durable operations, approval
+artifacts, locks, daemons, and audit storage only for concrete callers or failure
+modes.
 
 ## References
 
-Read only what the task needs:
+Read only what the task needs; combining references is normal:
 
-- [I/O and errors](references/io-and-errors.md): public input/output formats,
-  streams, exit states, interactivity, ordering, or compatibility.
-- [Stateful and remote commands](references/stateful-and-remote.md): remote
-  collections, mutations, retries, concurrency, bulk work, or detached work.
-- [Agent security](references/agent-security.md): untrusted output, secrets,
-  child execution, privilege boundaries, or delegated approval.
-- [Performance](references/performance.md): only when performance is requested,
-  budgeted, regressing, or measured as a repeated-invocation bottleneck.
-- [Precedents](references/precedents.md): only when examples or evidence would
-  improve a disputed design choice.
+- [I/O and errors](references/io-and-errors.md): formats, streams, exits,
+  interactivity, ordering, or compatibility.
+- [Mutation safety](references/mutations.md): writes, batches, idempotency,
+  concurrency control, plans, or approval.
+- [Remote operations](references/remote-operations.md): remote collections,
+  retries, rate limits, deadlines, or detached work.
+- [Agent security](references/agent-security.md): untrusted data, secrets, child
+  execution, privilege, workspace containment, or audit.
+- [Performance](references/performance.md): only for an explicit budget,
+  regression, or measured repeated-call bottleneck.
+- [Precedents](references/precedents.md): only when evidence would resolve a
+  design tradeoff.
 
-## Review Mode
+## Audit
 
-Inspect observed behavior, not documentation alone. Exercise representative
-commands through pipes/non-TTY and relevant failure modes. Report findings by
-severity with the affected command, observed contract, agent failure, and the
-smallest compatible correction. Separate additive migrations from breaking
-redesigns.
+Inspect behavior, not documentation alone. Exercise pipes/non-TTY and relevant
+failure modes. Report severity, affected command, observed contract, agent
+failure, and smallest compatible correction. Separate additive migration from
+breaking redesign.
