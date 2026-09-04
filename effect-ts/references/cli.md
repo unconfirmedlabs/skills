@@ -7,7 +7,7 @@ Stdio, Terminal, Console, PlatformError), `effect/unstable/process`
 (KeyValueStore), `effect/unstable/encoding` (Ndjson, Msgpack, Yaml, Toml, Ini).
 `BunServices.layer` from `@effect/platform-bun` satisfies every requirement.
 
-Pair this reference with the `agent-first-cli-design` skill: stdout carries
+Pair this reference with the `cli-design` skill: stdout carries
 data, stderr carries diagnostics, exit status is typed, no implicit prompts.
 
 ## Commands

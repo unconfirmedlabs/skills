@@ -1,5 +1,5 @@
 ---
-name: agent-first-cli-design
+name: cli-design
 description: Design or audit stable agent-facing CLI contracts. Use when creating or revising a CLI, especially machine I/O, streams, remote mutations, or repeated-call performance; not for copy-only help, internal implementation, or one-off shell use unless contract concerns apply.
 ---
 

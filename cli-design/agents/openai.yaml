@@ -1,4 +1,4 @@
 interface:
   display_name: "Agent-First CLI Design"
   short_description: "Design machine-safe CLI contracts"
-  default_prompt: "Use $agent-first-cli-design to design or review this CLI for agent-first automation."
+  default_prompt: "Use $cli-design to design or review this CLI for agent-first automation."

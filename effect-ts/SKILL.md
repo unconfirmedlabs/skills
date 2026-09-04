@@ -59,7 +59,7 @@ Load only the references the task needs; combining is normal.
 | Retries, timeouts, rate limits, caching, fallback plans | [resilience](references/resilience.md) |
 | Fibers, queues, pub/sub, refs, transactions, state machines | [state-and-concurrency](references/state-and-concurrency.md) |
 | Streams, NDJSON, backpressure, file or process output | [streams](references/streams.md) |
-| CLI commands, flags, prompts, filesystem, child processes | [cli](references/cli.md) plus the `agent-first-cli-design` skill for the I/O contract |
+| CLI commands, flags, prompts, filesystem, child processes | [cli](references/cli.md) plus the `cli-design` skill for the I/O contract |
 | HTTP servers, typed APIs, OpenAPI, HTTP clients, RPC, websockets | [http](references/http.md) |
 | SQL, key-value stores, durable workflows, cluster entities, LLM calls | [data-and-workflows](references/data-and-workflows.md) |
 | Tests, logging, tracing, metrics, devtools | [testing-and-observability](references/testing-and-observability.md) |
