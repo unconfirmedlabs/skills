@@ -1,0 +1,4 @@
+interface:
+  display_name: "Effect v4 on Bun"
+  short_description: "Build or migrate TypeScript projects with Effect v4"
+  default_prompt: "Use $effect-ts to build this TypeScript project on Effect v4 with Bun, or to migrate the existing code to Effect where it has the most impact."
