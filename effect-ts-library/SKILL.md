@@ -74,6 +74,12 @@ consumers. The worked example throughout is `sui-effect`, a wrapper over
 7. Independent verification against the spec before release, with a
    verification log in `docs/reviews/`.
 
+A client-extension package — built on another library's own foundation
+through its `Context.Service`, not on a raw upstream SDK (see that host's
+extension skill, e.g. `sui-effect-extension`) — follows the extension skill
+instead of steps 3–5: there is no independent mechanical tier or opinionated
+tier to build, only the host's services wrapped.
+
 ## Review checklist
 
 Reject a library that: exports helpers only its tests need; declares a

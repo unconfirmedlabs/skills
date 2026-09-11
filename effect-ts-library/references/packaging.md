@@ -19,6 +19,9 @@ scripts/            llms.ts and other generators
 `src/internal.ts` is the pressure valve: anything a test or a second module
 needs that is not a supported public API goes there. The `exports` map does
 not mention it, so consumers cannot depend on it and you can change it freely.
+The test directory's name is not load-bearing — `test/` above, `tests/` in a
+host monorepo that already uses that name — only the one-file-per-module
+convention and the `*.types.test.ts` suffix matter.
 
 ## package.json
 
@@ -68,7 +71,11 @@ Rules:
   on its error classes fail.
 - **A range for `effect`, an exact rc in devDependencies.** Pinning consumers
   to one rc forces every downstream package to move in lockstep. The range is
-  the set of rcs CI actually tests; document it in the README.
+  the set of rcs CI actually tests; document it in the README. When the
+  library itself lives as a workspace member of a larger monorepo, follow
+  that repo's own pinning policy (exact versions, a lockfile-enforced range)
+  even where it is stricter than this; note the deviation in the README
+  rather than relaxing its CI.
 - **Floor the SDK at the version whose behaviour you rely on**, not the latest.
   Say why in a comment (for example, "2.28 is the first version that round-trips
   `ValidDuring` expirations through `Transaction.from`").
@@ -105,7 +112,11 @@ typechecked by the main config so an example that stops compiling fails CI.
 `"prepare": "effect-language-service patch"` makes the language-service
 diagnostics (floating effects, `Effect.fn` opportunities, multiple provides,
 `any` in error channels) fail `tsc`, not just the editor. Check that a fresh
-`bun install` still works before relying on it.
+`bun install` still works before relying on it. This `prepare` script is
+library-only, never something a consumer's install should need to run.
+Consumers on TypeScript 7 (`tsgo`) are supported: `tsgo` does not load
+`tsconfig` plugins, so verify the packed tarball also typechecks under it
+if any tested consumer is on it.
 
 ## Build output
 

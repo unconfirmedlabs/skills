@@ -12,8 +12,12 @@ Never maintain a Promise API by hand beside the Effect one; they drift. Derive
 it:
 
 ```ts
-export const foo = (opts) => Facade.fromService(Foo, { layer: Foo.layer(opts) })
+export const foo = (opts) => FooExtension.fromService(Foo, { layer: Foo.layer(opts) })
 ```
+
+Name the helper `<Lib>Extension.fromService` (`SuiExtension.fromService` in
+sui-effect) — one name across the library and every extension skill that
+cites it, not a per-package `Facade`.
 
 `fromService` builds a `ManagedRuntime` lazily on first call over the layer
 and its dependencies, maps every Effect member to a Promise method, Stream
@@ -92,6 +96,9 @@ tier or module map, the error table, the tested rc matrix, and a pointer to
   `internal.ts` leaked.
 - Every public signature change has a changelog entry naming the error union
   change if any.
+- If this release supersedes another published package, deprecate it in the
+  same release (`npm deprecate <pkg>@"<range>" "superseded by <new>"`), not
+  after.
 - Isolated-consumer install passes on the packed tarball.
 - Tag, publish with provenance, verify the tarball contains `dist/` and
   `LLMS.md`.
