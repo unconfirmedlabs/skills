@@ -12,7 +12,11 @@ opinion. Ship both, as separate services with the same error taxonomy:
   into the SDK's cancellation option, one `mapSdkError`, a span per method,
   read retries on transient transport errors only, writes never retried here.
   A `use(f: (client, signal) => Promise<A>): Effect<A, FooError>` escape hatch
-  that still runs the error mapper.
+  that still runs the error mapper. When the wrapped SDK captures its own
+  client at plugin-creation time (a resolver, a transport), signal injection
+  through a proxy client does not reach that captured reference — either
+  re-implement cancellation against the SDK's real mechanism there or
+  document the gap instead of claiming a guarantee the code doesn't have.
 - **Opinionated tier** (`Foo`): built on the core service, fixed option sets,
   Schema-decoded results, `Option` for absence, streams for pagination, the
   locks and invariants the domain needs. Consumers drop one tier when they need
@@ -94,7 +98,10 @@ one pattern the language-service plugin flags most and it loses the span.
 ## Schemas and codecs
 
 - Branded primitives (`Address`, `ObjectId`, `Digest`) normalize on decode via
-  `SchemaGetter.transform` and reject malformed input; `X.make` at call sites.
+  `SchemaGetter.transform` and reject malformed input; `X.make` at call sites
+  with a value already known valid, never on unvalidated input (a network
+  response, a user string) — decode that with `Schema.decodeUnknownEffect`
+  into the library's `DecodeError` instead.
 - Bytes that reach any JSON boundary (errors, journals, logs) use
   `Schema.Uint8ArrayFromBase64`, never `Schema.Uint8Array`, or `toJson` yields
   `{"0":1,"1":2}`.

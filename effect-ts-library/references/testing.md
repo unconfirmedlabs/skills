@@ -14,10 +14,11 @@ documentation, and the fake you ship is the fake they test with.
   itself (the Sui SDK's `$extend`, on the fake's client object, not just
   scripted at the high-level methods) — a derived Promise face is tested the
   way a consumer writes it only if that mechanism actually works against the
-  fake. Document in the harness how the fake matches structural lookups a
-  consumer scripts (a dynamic-field fetch matched by `name.type` and
-  `name.bcs` bytes, not identity); an unstated matching rule is the first
-  thing a consumer's own test gets wrong.
+  fake. The fake must match a structural lookup key on all of its fields, not
+  a subset (a dynamic-field name is type plus bytes; matching on type alone
+  lets two same-typed keys silently collide) — document the exact matching
+  rule in the harness, since an unstated one is the first thing a consumer's
+  own test gets wrong.
 - The fake must be faithful where faithfulness is cheap and honest where it is
   not: derive identifiers the same way the upstream does (a digest from the
   submitted bytes, not a counter), implement enough of the upstream's

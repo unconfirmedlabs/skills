@@ -90,6 +90,14 @@ Rules:
   `node_modules`. Two copies of `effect` in one process means two
   `Context.Service` identities and layers that silently do not match, and a
   `file:../..` link is not reliably installable by every package manager.
+- **An unpublished foundation is consumed as a vendored tarball**, not a
+  `link:` to a separate, independently-installed checkout of it: the link
+  resolves the foundation's own imports against its own `node_modules`,
+  duplicating `effect` and any SDK it wraps. `npm pack` it, vendor the
+  `.tgz` under `vendor/`, and depend on it via a `file:` devDependency with
+  a matching `peerDependencies` range (`peerDependenciesMeta.optional: true`
+  if the package manager probes the registry for the unpublished name). A
+  `link:` to an actual workspace member of the same monorepo is fine.
 
 ## tsconfig
 

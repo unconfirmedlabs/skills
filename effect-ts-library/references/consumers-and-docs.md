@@ -23,7 +23,12 @@ cites it, not a per-package `Facade`.
 and its dependencies, maps every Effect member to a Promise method, Stream
 members to `AsyncIterable`, nested plain objects recursively, passes values
 through, rejects with the same tagged error instances (so `_tag` still works),
-and exposes `dispose()`. This is the only place `run*` appears in `src/`.
+and exposes `dispose()`. This is the only place `run*` appears in `src/`. A
+synchronous member (a constant, a builder function) must be truthful, not a
+placeholder: build it eagerly when the layer needs no network (a registration
+opt-in like sui-effect's `warm`), or fail fast with a typed not-ready error
+before the runtime exists — never return a `Promise` standing in for a value
+that already exists.
 
 When the upstream SDK has an extension mechanism (the Sui SDK's
 `client.$extend({ name, register })`), the derived facade is what you register,
@@ -67,11 +72,12 @@ words, and appends every file under `examples/` verbatim. CI fails if the
 committed file is stale. Ship it in `files` so it is in `node_modules` where
 agents look (`node_modules/<pkg>/LLMS.md`), and link it from the README.
 
-Generated output needs two readability rules. A Schema constant's inferred
-type is pages of combinators: print the checker's one-line summary plus the
-decoded type instead. An empty-bodied `Schema.TaggedError` class shows no
-fields in a `.d.ts`: enumerate the instance type's properties so the fields
-appear.
+Generated output needs three readability rules. A Schema constant's inferred
+type is pages of combinators: print the decoded type only, not the
+combinator dump. An empty-bodied `Schema.TaggedError` class shows no fields
+in a `.d.ts`: enumerate the instance type's properties so the fields appear.
+A symbol re-exported through more than one subpath prints once, not once per
+path.
 
 ## AGENTS.md
 

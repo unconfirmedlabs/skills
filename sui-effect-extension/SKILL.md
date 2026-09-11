@@ -33,10 +33,13 @@ starting point; its code blocks are the guide's.
   `SuiGraphQL`) is provided inside the extension's own layer, not left for
   the consumer.
 - Reads go through `Sui` (`getObject` with a BCS-bridge schema, `getObjectOption`,
-  `getObjects`/`getObjectsOrFail`, `streamOwnedObjects`, `streamDynamicFields`,
-  `view`). Writes go through `Tx.run` or `Tx.submit`; `executeTransaction` is
-  never called directly, so the journal, default expiration, sender lock and
-  reconcile apply.
+  `getObjects`/`getObjectsOrFail`, `streamOwnedObjects`, `streamDynamicFields`
+  via the safe dynamic-field type matcher, `view`). Writes go through `Tx.run`
+  or `Tx.submit`; `executeTransaction` is never called directly, so the
+  journal, default expiration, sender lock and reconcile apply. Expect
+  `SubmissionUnknown` for most stuck submissions (plan a `reconcileAll`
+  path); `Tx.build` always simulates on gRPC, so a `simulateTransaction`
+  call-count assertion includes it.
 - Transaction logic is exposed as recipe fragments `(tx) => void`, or
   `(tx) => A` returning builder arguments to thread — `Recipe` is the
   top-level draft type either way — so consumers compose several extensions
@@ -51,21 +54,32 @@ starting point; its code blocks are the guide's.
   with the package name.
 - Upstream Promise packages are wrapped, never re-exported: `sui.core.x(...)`
   or `sui.core.use((client, signal) => ...)` for a raw client call,
-  `Effect.tryPromise` with a mapping function for pure helpers, every upstream
-  result narrowed to a sui-effect schema before it leaves the module.
+  `Effect.tryPromise` with a mapping function for pure helpers (`SuiGraphQL.query`
+  for a GraphQL call, so the `GraphQLUnavailable` passthrough from a rejected
+  promise isn't re-derived by hand), every upstream result narrowed to a
+  sui-effect schema before it leaves the module.
 - Three layers: `layer(opts)`, `layerConfig`, `layerTest(state)`. An
   extension owning nothing but `Sui` has no fake to build —
   `layerTest = layer(fixedDeployment)` is correct as-is, not a shortcut.
   Tests use `layerExtensionTest` and `SuiTest` from `sui-effect/testing`
   (compose in a second fake's layer for an owned dependency) and open no
-  socket.
+  socket. `layerConfig` overrides are validated through the same typed
+  deployment path as `layer` — `Config.option` treats an empty variable as
+  unset, never a `ConfigError`. Register every extension on one client the
+  same way (all `warm` with the same chain id, or all lazy) so they share one
+  base runtime and sender-lock map.
+- Never `.make` a branded value (`ObjectId.make`, `StructTag.make`) from
+  unvalidated input — decode it with `Schema.decodeUnknownEffect` into a
+  `DecodeError` instead; an error whose schema needs an id you don't have yet
+  needs its own error or an `Option`. List `tests`/`test` in the package
+  tsconfig's `include`, or type-level pins never compile.
 - The Promise face is `SuiExtension.fromService(Service, { name, layer })`,
   derived, never hand-written; nested namespaces and Streams are handled. A
-  synchronous member (a recipe builder, a constant) is a `Promise` before the
-  runtime exists, a plain value after: pass `{ warm: { chainId? } }` to build
-  it inside `register` when the layer needs no network, so members are real
-  immediately, or call `client.$ready()` first — a sync member used too
-  early throws `ExtensionNotReady`.
+  synchronous member (a recipe builder, a constant) throws `ExtensionNotReady`
+  when read cold; pass `{ warm: { chainId? } }` to build it inside `register`
+  when the layer needs no network, so members are real immediately, or call
+  `client.$ready()` first — a warm or ready member is a real value, never a
+  placeholder `Promise`.
 
 ## Workflow
 
@@ -110,7 +124,7 @@ member, governed by the `$ready`/`warm` rule above.
 | `getOptionalObjectContent` | `sui.getObjectOption` |
 | `getObjectsContent(ids)` (silently drops errors) | `sui.getObjects(ids)`: a `Result` per id — return the array, or `Result.getOrElse`-filter for a soft read; `sui.getObjectsOrFail(ids)` fails on the first error for a hard one |
 | raw `client.core.x(...)` reach-through | `sui.core.x(...)`, or `sui.core.use((client, signal) => ...)` for a call `Sui`/`SuiCore` lack |
-| `listDynamicFields` | `sui.streamDynamicFields`; filter on `name.type`, decode `name.bcs` with `SuiSchema.decode` |
+| `listDynamicFields` | `sui.streamDynamicFields`; match with the safe dynamic-field type matcher, decode `name.bcs` with `SuiSchema.decode` |
 | `deriveDynamicFieldID` + `getObjectOption` (existence) | `sui.getDynamicFieldOption` |
 | `decodeBcs(codec, schema, bytes)` | `SuiSchema.decode(codec, bytes, { objectId?, expectedType? })` for bytes in hand; `SuiSchema.bcs(codec, type).pipe(Schema.decodeTo(DomainClass, ...))` as `schema` to `sui.getObject` |
 | `assertObjectType` | the bridge's normalized type-tag check; `DecodeError` on mismatch |
@@ -138,11 +152,24 @@ Cut a deprecation release of the superseded package first (final version,
 changelog note pointing at the extension), then `npm deprecate <pkg>@"<range>"
 "superseded by <new>"`; keep the old major installable. Delete it from a
 workspace only once every sibling still resolving it from source (a
-workspace/`link:` dependency, not a published range) has moved. Before
-sui-effect itself has a release, depend on it via `link:../sui-effect` (or
-the workspace protocol) inside a monorepo so one `effect` copy resolves, or
-a `file:` tarball outside one; swap to the npm semver range in the PR that
-merges past its first tag.
+workspace/`link:` dependency, not a published range) has moved.
+
+Before sui-effect has a release, `link:`/`bun link` to a separate,
+independently-installed checkout is not an option — it resolves sui-effect's
+own imports against its own `node_modules`, duplicating `effect` and the SDK
+and failing typecheck on `#private` mismatches across every boundary-crossing
+class (`link:` to an actual workspace member of the same monorepo dedupes
+fine). Instead: `npm pack --pack-destination <dir>` in the sui-effect
+checkout, vendor the tarball as `vendor/sui-effect-<v>.tgz` (committed),
+noting the exact commit or tag packed and re-packing when it moves. Depend on
+it as `"sui-effect": "file:./vendor/sui-effect-<v>.tgz"` in `devDependencies`
+with the matching range in `peerDependencies`, plus
+`"peerDependenciesMeta": { "sui-effect": { "optional": true } }` — bun probes
+npm for a peer even when a local dependency of the same name satisfies it,
+and 404s on an unpublished package. Swap-to-npm checklist on the first
+release: bump `peerDependencies` to the published version range, drop the
+`peerDependenciesMeta` entry, `git rm` the tarball and its `file:`
+devDependency, `bun install`, rerun `test:consumer`.
 
 ## Review checklist
 
@@ -151,5 +178,10 @@ Reject an extension that: has a `Promise` or `unknown` in its interface; calls
 itself; holds a consumer signer or a client in its layer; exposes an upstream
 package's types unnarrowed; maintains a Promise class beside the service;
 submits where a fragment would do; defines an error without `outcome`; reads
-`process.env` instead of `Config`; tests against the network; or diverges from
-the sui-effect method names it wraps.
+`process.env` instead of `Config`; tests against the network; wraps
+`Sui.layerNoDeps` in `Layer.orDie` inside a compat class instead of surfacing
+the error; ships a fake script with only one key type per parent (proves
+nothing about filtering); has a README `catchTag` string that doesn't match
+the prefixed tag; calls `normalizeStructTag` on a dynamic-field key type
+unguarded (primitives like `u64`/`bool`/`address` are legal keys); or
+diverges from the sui-effect method names it wraps.
