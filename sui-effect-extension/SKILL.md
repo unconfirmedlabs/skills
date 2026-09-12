@@ -52,6 +52,11 @@ starting point; its code blocks are the guide's.
 - Every extension error declares `outcome: "applied" | "not_applied" | "unknown"`
   so `SuiError.outcome` and `Script.exitCode` can act on it; tags are prefixed
   with the package name.
+- An optional field on an error or struct the extension constructs itself is
+  `Schema.optionalKey`, not `Schema.optional` (`node_modules/@unconfirmed/sui-effect/docs/extensions.md`
+  §2/§3); keep `optional` only for a field mirrored from the SDK. Peer on
+  `@unconfirmed/sui-effect` as `>=0.1.0 <0.3.0` — a 0.x caret does not admit
+  0.2.0.
 - Upstream Promise packages are wrapped, never re-exported: `sui.core.x(...)`
   or `sui.core.use((client, signal) => ...)` for a raw client call,
   `Effect.tryPromise` with a mapping function for pure helpers (`SuiGraphQL.query`
@@ -271,8 +276,10 @@ submits where a fragment would do; defines an error without `outcome`; reads
 the error; ships a fake script with only one key type per parent (proves
 nothing about filtering); has a README `catchTag` string that doesn't match
 the prefixed tag; calls `normalizeStructTag` on a dynamic-field key type
-unguarded (primitives like `u64`/`bool`/`address` are legal keys); or
-diverges from the sui-effect method names it wraps.
+unguarded (primitives like `u64`/`bool`/`address` are legal keys); uses
+`Schema.optional` where the guide's §2/§3 call for `optionalKey`, or passes an
+explicit `undefined` at a construction site; or diverges from the sui-effect
+method names it wraps.
 
 Reviewing a consumer of an extension, also reject code that: wraps a face
 member's `Promise` in `Effect.runPromise` or any other `run*`; uses a
