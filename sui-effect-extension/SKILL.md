@@ -12,9 +12,9 @@ submit with a journal and reconcile), `Script` the on-demand script preset,
 `SuiGraphQL` an optional GraphQL client tag, and `SuiExtension.fromService`
 the Promise face. An extension is how a Move package's SDK is shipped on top
 of it. The authoritative contract ships inside the package: read
-`node_modules/sui-effect/docs/extensions.md` in full before writing code,
-then `node_modules/sui-effect/LLMS.md` for every signature and
-`node_modules/sui-effect/AGENTS.md` for the library's own rules. Copy
+`node_modules/@unconfirmed/sui-effect/docs/extensions.md` in full before writing code,
+then `node_modules/@unconfirmed/sui-effect/LLMS.md` for every signature and
+`node_modules/@unconfirmed/sui-effect/AGENTS.md` for the library's own rules. Copy
 `examples/extension-template/` from the sui-effect repository as the
 starting point; its code blocks are the guide's.
 
@@ -61,7 +61,7 @@ starting point; its code blocks are the guide's.
 - Three layers: `layer(opts)`, `layerConfig`, `layerTest(state)`. An
   extension owning nothing but `Sui` has no fake to build —
   `layerTest = layer(fixedDeployment)` is correct as-is, not a shortcut.
-  Tests use `layerExtensionTest` and `SuiTest` from `sui-effect/testing`
+  Tests use `layerExtensionTest` and `SuiTest` from `@unconfirmed/sui-effect/testing`
   (compose in a second fake's layer for an owned dependency) and open no
   socket. `layerConfig` overrides are validated through the same typed
   deployment path as `layer` — `Config.option` treats an empty variable as
