@@ -1,0 +1,28 @@
+{
+  "name": "effect-cloudflare-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --minify --outdir dist",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "check": "bun run typecheck && bun run test && bun run build",
+    "deploy": "wrangler deploy --minify",
+    "dev": "wrangler dev",
+    "prepare": "effect-language-service patch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "bun run cf-typegen && tsc --noEmit && tsc --noEmit -p test/tsconfig.json"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.113"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.8",
+    "@effect/language-service": "^0.87.2",
+    "@types/node": "^22.20.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.131.1"
+  }
+}

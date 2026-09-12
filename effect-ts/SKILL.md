@@ -1,6 +1,6 @@
 ---
 name: effect-ts
-description: Build or migrate TypeScript projects on Effect v4 (effect@rc) with Bun. Use when starting any TypeScript project (script, CLI, HTTP API, worker, agent tool), when adding Effect to an existing codebase, when writing or reviewing code that imports from "effect", or when the task needs typed errors, dependency injection via Layers, Schema validation, retries, concurrency, streams, durable workflows, or predictable state machines for agent workflows. Not for Effect v3 codebases that must stay on v3 (see the migration reference for the v3-to-v4 map instead).
+description: Build or migrate TypeScript projects on Effect v4 (effect@rc) with Bun. Use when starting any TypeScript project (script, CLI, HTTP API, background worker, agent tool), when adding Effect to an existing codebase, when writing or reviewing code that imports from "effect", or when the task needs typed errors, dependency injection via Layers, Schema validation, retries, concurrency, streams, durable workflows, or predictable state machines for agent workflows. For a Cloudflare Worker, also use the sibling effect-cloudflare-workers skill. Not for Effect v3 codebases that must stay on v3 (see the migration reference for the v3-to-v4 map instead).
 ---
 
 # Effect v4 on Bun
@@ -61,12 +61,14 @@ Load only the references the task needs; combining is normal.
 | Streams, NDJSON, backpressure, file or process output | [streams](references/streams.md) |
 | CLI commands, flags, prompts, filesystem, child processes | [cli](references/cli.md) plus the `cli-design` skill for the I/O contract |
 | HTTP servers, typed APIs, OpenAPI, HTTP clients, RPC, websockets | [http](references/http.md) |
+| Cloudflare Worker HTTP/event entrypoints, bindings, cache, workerd tests | Use the sibling `effect-cloudflare-workers` skill |
 | SQL, key-value stores, durable workflows, cluster entities, LLM calls | [data-and-workflows](references/data-and-workflows.md) |
 | Tests, logging, tracing, metrics, devtools | [testing-and-observability](references/testing-and-observability.md) |
 | Existing code, v3 names, incremental adoption | [migration](references/migration.md) |
 
 Ready-to-copy entrypoints live in `assets/templates/` (`script.ts`, `cli.ts`,
-`api.ts`, `worker.ts`). They typecheck against `effect@4.0.0-rc.112`.
+`api.ts`, `worker.ts`; the latter is a long-running queue consumer, not a
+Cloudflare Worker). They typecheck against `effect@4.0.0-rc.112`.
 
 ## New project
 
