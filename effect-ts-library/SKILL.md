@@ -25,6 +25,9 @@ consumers. The worked example throughout is `sui-effect`, a wrapper over
   package name where collision is plausible, and every field is JSON-safe
   (bytes as base64 codecs, bigints as `Schema.BigInt`), so `toJson` and
   round-trips through logs, RPC and journals work.
+- Optional fields on library-owned shapes are `Schema.optionalKey`;
+  SDK-mirroring ones are `Schema.optional`; no construction site passes an
+  explicit `undefined`.
 - Dependencies are `Context.Service` classes with path-like identifiers
   (`"<package>/<Name>"`). Credentials, signers and other per-call values are
   parameters, never services, because a service in `R` cannot say which one.

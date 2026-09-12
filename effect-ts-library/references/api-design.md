@@ -116,6 +116,19 @@ one pattern the language-service plugin flags most and it loses the span.
   deltas) belong on a `Schema.Class` result value with methods, not as loose
   functions, and must not fabricate fields the upstream did not return; type
   the missing ones as optional.
+- An optional field on a shape the library constructs itself is
+  `Schema.optionalKey`, not `Schema.optional`: it types the field `x?: T`,
+  refuses the key set to an explicit `undefined` at decode and at
+  construction (a compile error too, under `exactOptionalPropertyTypes`), and
+  drops the spurious `null` branch `optional` adds to the JSON Schema. Keep
+  `optional` for a field mirroring an external producer (an SDK or gRPC
+  response) that can genuinely carry the key set to `undefined`. Construction
+  sites spread the key conditionally rather than assigning `undefined`:
+
+  ```ts
+  chain: Schema.optionalKey(Schema.String)      // a shape this library builds
+  ...(chain === undefined ? {} : { chain })     // never `{ chain: undefined }`
+  ```
 
 ## Named error unions for multi-step operations
 
