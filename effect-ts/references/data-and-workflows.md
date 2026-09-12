@@ -75,6 +75,21 @@ Keep `layerNoDeps` requiring only `SqlClient` so tests use `SqliteClient.layer({
 const kv = yield* KeyValueStore.KeyValueStore                                 // get/set/remove/has/modify/clear/size, string or Uint8Array
 const store = KeyValueStore.toSchemaStore(KeyValueStore.prefix(kv, "session:"), SessionState)   // typed Option<T> get/set
 // layers: KeyValueStore.layerMemory | layerFileSystem(dir) | layerSql({ table }) | layerStorage(() => localStorage)
+```
+
+No built-in layer fits a custom backend (a Durable Object's SQLite storage,
+which is string-keyed and has no bulk scan): `KeyValueStore.makeStringOnly`
+derives the full interface from five primitives, rejecting `Uint8Array` values
+instead of pretending to support them.
+
+```ts
+const layerDurableObject = (storage: DurableObjectStorage) => KeyValueStore.makeStringOnly({
+  get: (key) => Effect.tryPromise({ try: () => storage.get<string>(key), catch: KeyValueStoreError.fromUnknown }),
+  set: (key, value) => Effect.tryPromise({ try: () => storage.put(key, value), catch: KeyValueStoreError.fromUnknown }),
+  remove: (key) => Effect.tryPromise({ try: () => storage.delete(key), catch: KeyValueStoreError.fromUnknown }),
+  clear: Effect.tryPromise({ try: () => storage.deleteAll(), catch: KeyValueStoreError.fromUnknown }),
+  size: Effect.tryPromise({ try: () => storage.list().then((m) => m.size), catch: KeyValueStoreError.fromUnknown })
+})   // has/modify/isString are derived; consumers get the same KeyValueStore.KeyValueStore tag as any other layer
 
 class GetUser extends Persistable.Class<{ payload: { id: string } }>()("GetUser", { primaryKey: ({ id }) => `GetUser:${id}`, success: User }) {}
 const cache = yield* PersistedCache.make((req: GetUser) => fetchUser(req.id), { storeId: "users", timeToLive: () => "5 minutes", inMemoryCapacity: 1000 })
