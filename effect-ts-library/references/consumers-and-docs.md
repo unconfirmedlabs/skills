@@ -25,10 +25,18 @@ members to `AsyncIterable`, nested plain objects recursively, passes values
 through, rejects with the same tagged error instances (so `_tag` still works),
 and exposes `dispose()`. This is the only place `run*` appears in `src/`. A
 synchronous member (a constant, a builder function) must be truthful, not a
-placeholder: build it eagerly when the layer needs no network (a registration
-opt-in like sui-effect's `warm`), or fail fast with a typed not-ready error
-before the runtime exists — never return a `Promise` standing in for a value
-that already exists.
+placeholder. **It is never a `Promise`**: a `Promise` standing in for a value
+the type says is already there is a bug that only shows on the *second* call,
+once the member has become real. Until the runtime exists, such a member either
+is not reached at all — build it eagerly when the layer needs no network, a
+registration opt-in like sui-effect's `warm` — or fails fast with a typed
+not-ready error naming itself.
+
+One trap in the mapping: a **plain-object value** member (`deployment: {
+packageId }`) is indistinguishable from a namespace of members, so the type
+maps it as a value while the cold face treats it as a namespace. Either build
+eagerly, or expose the value through an Effect member, or give it a prototype
+of its own; do not put one on a service consumers will register lazily.
 
 When the upstream SDK has an extension mechanism (the Sui SDK's
 `client.$extend({ name, register })`), the derived facade is what you register,
