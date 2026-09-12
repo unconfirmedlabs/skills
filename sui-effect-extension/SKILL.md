@@ -1,6 +1,6 @@
 ---
 name: sui-effect-extension
-description: Write, migrate or review a Sui SDK package as a sui-effect extension: an Effect v4 Context.Service built on sui-effect's Sui and Tx services with a derived $extend Promise face. Use when creating a TypeScript SDK for a Move package, converting a package from @misofm/effect or from a hand-written @mysten/sui client extension, or reviewing one. Not for sui-effect itself (see effect-ts-library) and not for applications that only consume extensions.
+description: Write, migrate or review a Sui SDK package as a sui-effect extension: an Effect v4 Context.Service built on sui-effect's Sui and Tx services with a derived $extend Promise face. Use when creating a TypeScript SDK for a Move package, converting a package from @misofm/effect or from a hand-written @mysten/sui client extension, or reviewing one; also covers an application, CLI or Workers service that only consumes an already-built extension. Not for sui-effect itself (see effect-ts-library).
 ---
 
 # sui-effect extensions
@@ -104,6 +104,31 @@ starting point; its code blocks are the guide's.
 5. `bun run check` green; run the review checklist in the guide's section 12
    against the diff.
 
+## Testing
+
+- A submit test must script `getTransaction: notFound` on the fake unless it
+  deliberately models a transaction that already landed: `Tx.submit`'s
+  reconcile path consults `getTransaction` before deciding whether an execute
+  needs a fresh attempt, so an unscripted default silently exercises a
+  different code path than a cold journal hits in production.
+- A sponsored flow's test asserts the signature count on
+  `SuiTest.calls("executeTransaction")` (sender and sponsor), not only that
+  execution succeeded — a test that checks the digest alone still passes if
+  cosigning silently dropped a signature.
+- `layerTest` for a deployment whose `chainId` resolves to the mainnet or
+  testnet built-in id asserts that literal id, since those are the two chains
+  sui-effect ships a genesis checkpoint for; fixtures use `localnet` or an id
+  that genuinely matches the fixture's network, never a placeholder — against
+  a built-in id the assertion is vacuous.
+- A signer double needs `getKeyScheme`, `toSuiAddress` and `signTransaction`
+  at minimum: `Signer.fromSdkSigner` validates all three are present at
+  construction and throws naming whichever is missing, so a partial double
+  fails immediately instead of producing a silent `scheme: undefined`.
+- Extension error tags are namespaced (`partyos/PartyNotFound`) while
+  sui-effect's own are bare (`ObjectNotFound`); copy every `catchTag` string
+  from the installed package's `dist`, never retype it from memory or from a
+  different version's source.
+
 ## Converting an existing facade
 
 No template for a large hand-written one. Inventory every namespace and
@@ -139,12 +164,75 @@ member, governed by the `$ready`/`warm` rule above.
 | `DeploymentError` | the extension's own `<pkg>/DeploymentError`, `outcome: "not_applied"` |
 | `GraphQLUnavailableError` | sui-effect's `GraphQLUnavailable` (`SuiGraphQL` service) |
 | a class registered via `$extend` with Promise methods | the service plus `SuiExtension.fromService` |
+| a hand-rolled idempotent submitter (persist signed bytes, execute, wait, re-poll by hand) | `Tx.build` / `Tx.sign` / `Tx.submit` with a durable `Journal` and a periodic `Tx.reconcileAll` |
+| `client.miso.ready()` genesis/chain-id check | a no-op under the derived face; the equivalent check runs once, inside the `Sui` layer, at build |
 
 Behaviour changes to call out in the migration PR: `getObjects` no longer drops
 errored ids; balance and gas are `bigint`; the redundant `waitForTransaction`
 after execute is gone; on-chain failure is always the `ExecutionFailed` error;
 an unknown outcome is a typed `SubmissionUnknown` carrying the signed bytes;
-the registration `name`, if it changes from the predecessor's.
+the registration `name`, if it changes from the predecessor's. A leftover
+`Effect.runPromise(client.x.y())` wrapper around a face member is a runtime
+error after conversion, not a type error: the derived face's member is
+already a `Promise`-returning function, so wrapping it in `Effect.runPromise`
+hands a `Promise` where an `Effect` is expected and fails at the call site —
+delete the wrapper rather than trying to fix its types.
+
+## Application and service consumers
+
+An app, CLI or Workers service that only calls an already-built extension's
+Promise face still needs a few author-level facts.
+
+**Runtime.** One module-level `ManagedRuntime` per process (per isolate in
+Workers): build it over `Sui.layerNoDepsWith({ chainId: deployment.chainIdentifier })`
+composed with `SuiCore.layerFromClient(client)`, not the bare `Sui.layerNoDeps`,
+which asserts the built-in table's id rather than the deployment's own.
+Dispose it on HMR teardown (`import.meta.hot?.dispose(() => runtime.dispose())`)
+so a Vite/webpack reload does not leak a client and its sockets.
+
+**Sponsored by an external cosigner.** When a relay or sponsor service signs
+and submits, do not call `Tx.run`, which owns the whole build-sign-submit span
+itself: build with `Tx.build`, sign locally with `Tx.sign`, hand the signed
+bytes to the relay, and let the relay (or a later `Tx.reconcileAll`) own
+submission. Map the result with `SuiError.outcome(error, { phase })` — the
+`phase` argument is what tells `outcome` that an error raised before the
+handoff (build, sign, or the call to the relay itself) is `"not_applied"`,
+even though the same error tag can mean `"unknown"` once bytes have left the
+process.
+
+**Warm registration.** `client.$extend(register, { warm: { chainId } })`
+throws synchronously only for a network or deployment mismatch (the warm
+chain id disagrees with what the layer resolves) and for any failure while
+building the layer itself — never for an ordinary member call. Register at
+module scope inside a `try`/`catch` (or call a lazy `register()` from a boot
+step) so a mismatch does not take down the whole import graph in a browser.
+
+**Relay envelopes.** A relay that returns a reduced result (digest and effects
+only, no `objectTypes`) decodes through `Executed.fromPartial`, not
+`Executed.decode`; every accessor still works except type-narrowed ones, and
+only `created()` — not `createdWhere` or a type-filtered `expectCreated` — is
+trustworthy without `objectTypes`, since those need the type map to
+disambiguate.
+
+**CLI exit codes.** Map every error through `Script.exitCode` (or the same
+applied / not_applied / unknown axis by hand): `"applied"` means a retry would
+double-submit, `"not_applied"` is always safe to retry, and `"unknown"`
+prints the digest and the signed bytes to stderr and exits non-zero — never
+persist or auto-retry from an unknown outcome without a human or a
+`reconcileAll` pass first.
+
+**Workers and Durable Objects.** One `ManagedRuntime` per Durable Object
+instance (see the `effect-ts` skill's "Edges without a platform runtime").
+Keep a durable `Journal` over `KeyValueStore.makeStringOnly` backed by the
+DO's own SQLite storage, not the library's in-memory default, so an entry
+survives an eviction. Run `Tx.reconcileAll` at the start of every alarm,
+before scheduling new work, so a crash between sign and submit is resolved
+before anything else touches the same sender. The orphan-row rule: a domain
+row with no digest, or with a digest but no matching journal entry, was never
+sent and is safe to resubmit from scratch; a row is done only once its
+journal entry reaches a terminal state (`applied`, or a terminal
+`not_applied`) *and* that terminal state has been copied onto the row itself —
+an entry sitting in the journal, unread, does not make the row correct.
 
 ## Retiring a predecessor, and depending on an unreleased sui-effect
 
@@ -185,3 +273,10 @@ nothing about filtering); has a README `catchTag` string that doesn't match
 the prefixed tag; calls `normalizeStructTag` on a dynamic-field key type
 unguarded (primitives like `u64`/`bool`/`address` are legal keys); or
 diverges from the sui-effect method names it wraps.
+
+Reviewing a consumer of an extension, also reject code that: wraps a face
+member's `Promise` in `Effect.runPromise` or any other `run*`; uses a
+`catchTag` string not verified against the installed package's `dist`; shows
+or logs a digest on an unknown outcome without the signed bytes beside it, or
+persists those bytes anywhere past that error path; or has a submit test
+missing `getTransaction: notFound` for the not-yet-landed case.

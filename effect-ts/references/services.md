@@ -125,6 +125,50 @@ await runtime.dispose()                                      // runs finalizers;
 const ctx = yield* Effect.context<Users>(); Effect.runPromiseWith(ctx)(effect)   // capture services for callbacks
 ```
 
+A `ManagedRuntime` builds its layer once and memoizes the result **including a
+failure**: if the first call's layer build throws (a dropped connection during
+startup), every later call against that same runtime rejects with the same
+build error forever, even after the network recovers. At an edge you do not
+restart per call, so pick one: invalidate and rebuild the runtime when a build
+fails (`dispose()` the poisoned one, `ManagedRuntime.make` a fresh one), or
+keep anything that can fail on the network out of the layer that builds
+eagerly and defer it into a service method instead.
+
+For a hook-driven SPA or a Workers isolate — anywhere the entrypoint is not
+itself an Effect program — the sanctioned shape is a module-level
+`ManagedRuntime` plus a small `run*` helper closing over it:
+
+```ts
+const runtime = ManagedRuntime.make(AppLayer)
+export const runApp = <A, E>(effect: Effect.Effect<A, E, AppServices>) => runtime.runPromise(effect)
+```
+
+Callers (a React event handler, a `fetch` handler) call `runApp(...)`, never
+`Effect.runPromise` directly. This module-level runtime-and-helper pair *is*
+the entrypoint for such an app: "never call `run*` outside the entrypoint"
+means outside this helper, not literally at the top of a `main.ts` the app
+does not have. Tests mock the helper, not the runtime — swap `runApp`'s
+runtime for one built over `AppLayer.pipe(Layer.provide(FakeLive))` so the
+code under test, which only ever calls `runApp`, is unchanged.
+
+## Edges without a platform runtime
+
+Cloudflare Workers and Durable Objects have no `BunRuntime` (no process, no
+signals to trap) and no `process`: read config from the handler's `env` with
+`ConfigProvider.fromEnvRecord(env)`, never `process.env`. Build one
+`ManagedRuntime` per isolate, or one per Durable Object instance (in the
+object's constructor), using the module-level pattern above; do not rebuild it
+per request or per alarm, or every invocation re-pays layer construction,
+including any network call a naive layer makes at build. Forking fibers is
+fine for the lifetime of one request or one alarm invocation, since the
+isolate stays alive until the handler's returned promise settles, but nothing
+survives past that boundary — do not rely on a detached fiber to finish work
+later. Locks held in layer state (a per-key `Ref`, a sender lock) are local to
+one isolate: they do not coordinate across Durable Object instances or across
+a DO's own restarts, so correctness has to come from idempotency at the
+storage layer — a durable, keyed record of what was already done — not from
+in-memory mutual exclusion.
+
 ## Batching and deduplication
 
 ```ts

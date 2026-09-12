@@ -23,7 +23,11 @@ cites it, not a per-package `Facade`.
 and its dependencies, maps every Effect member to a Promise method, Stream
 members to `AsyncIterable`, nested plain objects recursively, passes values
 through, rejects with the same tagged error instances (so `_tag` still works),
-and exposes `dispose()`. This is the only place `run*` appears in `src/`. A
+and exposes `dispose()`. This is the only place `run*` appears in `src/`. Every
+error class needs a `message` getter, not only a fields object: a Promise
+consumer outside Effect (a plain `try`/`catch`, an uncaught-rejection logger)
+reads `.message`, and a rejection whose `.message` is empty reads as a bug in
+the library, not in the caller. A
 synchronous member (a constant, a builder function) must be truthful, not a
 placeholder. **It is never a `Promise`**: a `Promise` standing in for a value
 the type says is already there is a bug that only shows on the *second* call,
@@ -64,12 +68,20 @@ template package that typechecks against your pinned rcs:
   extension's layer;
 - every extension error declares the outcome classifier (`applied`,
   `not_applied`, `unknown`); an undeclared tag is unclassified to the
-  exit-code mapper, not a default;
+  exit-code mapper, not a default; a shared `outcome(error, opts)` helper that
+  classifies both your own errors and the host's takes a `phase` option when
+  a single foreign error tag is ambiguous on its own — the same generic
+  transport error is `not_applied` before a submit call and `unknown` after
+  one, and only the caller knows which phase it was in;
 - a derived Promise face via your facade helper.
 
 Provide a test harness in `/testing` (your fake plus helpers to script state)
-so an extension's tests need no network. Copy the guide's code blocks from the
-template so they cannot drift.
+so an extension's tests need no network. Document what the fake does on a
+refused submission (a `FailedTransaction`, a rejected sponsor signature): a
+fake that quietly reconciles a refused execute into a scripted success is
+worse than no fake at all, since it hides exactly the bug a consumer's error
+handling exists to catch. Copy the guide's code blocks from the template so
+they cannot drift.
 
 ## LLMS.md
 
