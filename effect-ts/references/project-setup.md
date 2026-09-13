@@ -1,109 +1,74 @@
-# Project setup (Bun + Effect v4)
+# Project setup and runtime selection
 
-## Install
+Requires: [core](core.md), [services](services.md).
 
-```bash
-bun init -y
-bun add effect@rc @effect/platform-bun@rc          # no tag installs v3; @rc is v4
-bun add -d @effect/language-service typescript @types/bun
-# optional, same version as effect:
-bun add @effect/sql-sqlite-bun@rc @effect/sql-pg@rc @effect/ai-anthropic@rc @effect/opentelemetry@rc
+Use the existing package manager, runtime, test runner and module layout unless
+the task changes them. Bun is a convenient default for a new local script/CLI;
+it is not an Effect dependency or a reason to migrate an existing Node app.
+
+## Version selection
+
+Inspect installed versions/lockfiles before editing. At this skill's baseline,
+`effect@rc` resolves to 4.0.0-rc.115 while `latest` is still v3; dist-tags move.
+Resolve and pin the intended v4 release. Verify each adapter's peer requirements;
+most release-train adapters align, but tooling packages have independent versions.
+
+Example baseline for a new Bun app:
+
+```sh
+bun add --exact effect@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.115
+bun add -d typescript @types/bun
 ```
 
-All `@effect/*` packages share one version with `effect`. Pin the exact rc
-(`4.0.0-rc.N`) in `package.json`; unstable modules can break between rcs.
-Check the installed version with `bun pm ls effect`.
+Use public namespace subpaths, e.g. `effect/Effect`, `effect/Schema`,
+`effect/unstable/http/HttpClient` and `@effect/platform-node/NodeRuntime`.
+Barrels are supported, but subpaths improve bundler predictability, particularly
+with Wrangler/esbuild. Never import `effect/internal/*`.
 
-## tsconfig.json
+## Runtime selection
 
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "noEmit": true,
-    "skipLibCheck": true,
-    "exactOptionalPropertyTypes": true,
-    "allowImportingTsExtensions": true,
-    "types": ["bun"],
-    "plugins": [{ "name": "@effect/language-service" }]
-  },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
-}
-```
-
-`strict: true` is required. TypeScript 5.9+ (7 works). The language-service
-plugin adds diagnostics for floating effects, `any`/`unknown` in the error
-channel, `try/catch` inside generators, redundant `catch` on `never` errors, and
-`console.log`/`Math.random`/`Date.now` where Effect services exist. Editor-only
-by default; to fail `tsc` on them add `"prepare": "effect-language-service patch"`
-to scripts. `bunx effect-language-service layerinfo` prints the layer graph.
-
-## Imports
-
-```ts
-import { Effect, Layer, Context, Schema, Config } from "effect"   // stable core
-import { FileSystem, Path } from "effect"                           // platform abstractions are core in v4
-import { TestClock, TestConsole, TestSchema } from "effect/testing"
-import { Command, Flag, Argument } from "effect/unstable/cli"
-import { HttpRouter, HttpServerResponse, HttpClient } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { SqlClient, SqlSchema, SqlModel } from "effect/unstable/sql"
-import { BunRuntime, BunServices, BunHttpServer } from "@effect/platform-bun"
-```
-
-Subpaths: `effect/<Module>` for any core module, `effect/testing`,
-`effect/unstable/{ai,cli,cluster,devtools,encoding,eventlog,http,httpapi,observability,persistence,process,reactivity,rpc,schema,socket,sql,workers,workflow}`.
-`effect/internal/*` is not public.
-
-## Layout
-
-```
-src/
-  domain/        Schema models, branded ids, TaggedError classes, state unions
-  services/      one Context.Service per file: interface, `layer`, `layerTest`
-  cli/ | http/   edges: commands or api definition + handlers (definition file separate from handlers)
-  main.ts        wiring only: compose layers, BunRuntime.runMain
-test/            bun test files
-```
-
-Service identifiers are path-like and unique: `"myapp/db/Database"`.
-
-## Entrypoints
-
-| Shape | Pattern |
+| Deliverable | Edge and adapter |
 |---|---|
-| Script | `BunRuntime.runMain(program.pipe(Effect.provide(BunServices.layer)))` |
-| CLI | `cmd.pipe(Command.run({ version }), Effect.provide(BunServices.layer), BunRuntime.runMain)` |
-| Server / worker | `BunRuntime.runMain(Layer.launch(AppLayer))` |
-| Inside Hono / Bun.serve / tests | `const runtime = ManagedRuntime.make(AppLayer)` then `runtime.runPromise(effect)`; `runtime.dispose()` on shutdown |
+| Bun script/CLI/server | `@effect/platform-bun`: BunRuntime, BunServices, BunHttpServer |
+| Node script/CLI/server | `@effect/platform-node`: NodeRuntime, NodeServices, NodeHttpServer |
+| Deno app | `@effect/platform-deno`; inspect the installed adapter and import configuration |
+| Browser app | `@effect/platform-browser`, scoped host runtime or Atom runtime; no server filesystem/process assumptions |
+| Cloudflare Worker | Web handler + invocation Context; [Cloudflare module](cloudflare/index.md) |
+| Shared library | Effect values/services/Layers; [library module](library/index.md), consumer owns runtime |
+| Foreign framework/SSR | ManagedRuntime or Web handler; separate application and request ownership |
 
-`BunRuntime.runMain(effect, { disableErrorReporting?, teardown? })` installs
-SIGINT/SIGTERM handlers, interrupts the root fiber, runs finalizers, sets the
-exit code (1 on failure), and pretty-prints unhandled causes. The core runtime
-keeps the process alive while fibers are suspended, so `Effect.runPromise`
-alone also works for one-shot scripts, but loses signal handling.
+Platform packages implement core capabilities such as FileSystem, Path, Stdio,
+Terminal, Crypto, HTTP and worker transport. Availability differs by host; a
+package named platform-browser does not provide a real server filesystem.
 
-`BunServices.layer` provides FileSystem, Path, Terminal, Stdio, ChildProcessSpawner,
-and the WebSocket constructor. `BunHttpServer.layer({ port })` provides the HTTP
-server. `BunHttpClient` re-exports `FetchHttpClient`.
+## Compiler and diagnostics
 
-## package.json scripts
+Enable `strict`. Prefer `exactOptionalPropertyTypes` and
+`noUncheckedIndexedAccess` for new code; baseline additional diagnostics before
+changing an existing project. Choose module resolution to match execution:
+Bundler for a bundled application; NodeNext plus emitted `.js` imports for a
+library that must run directly under Node ESM. Do not prove Node compatibility
+only with Bun's more permissive resolver.
 
-```json
-{
-  "scripts": {
-    "dev": "bun --hot src/main.ts",
-    "start": "bun src/main.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "prepare": "effect-language-service patch"
-  }
-}
-```
+Use compatible Effect language tooling for extra diagnostics. The conventional
+`@effect/language-service` plugin is editor-only unless its compiler integration
+is configured. Native TypeScript toolchains have different plugin support; check
+[Effect's tsgo integration](https://github.com/Effect-TS/tsgo) and the installed
+package's instructions. Do not silently add an install-time compiler patch or
+assume editor warnings fail CI. Document the actual check command.
 
-Templates that typecheck and run against `effect@4.0.0-rc.112` are in
-`assets/templates/`: `script.ts`, `cli.ts`, `api.ts`, `worker.ts`,
-`state-machine.ts`. Copy one, rename the domain, keep the wiring.
+Lay out source by capability/domain and keep the composition root visible.
+Separate portable domain/services from host adapters. A small script may be one
+file; an application need not copy an SDK's publication layout.
+
+## Executable starters
+
+`assets/templates/` contains Bun script, CLI, API, queue-worker, state-machine,
+Node script, portable library and host-bridge examples. The queue worker is a
+process worker, distinct from `assets/cloudflare-worker/`.
+
+Compile the selected template against the target versions, then test its edge:
+script success/failure; CLI argv/stdout/stderr/status; API contract and shutdown;
+worker lifecycle; library packed consumer. Run the target's existing check
+command. Record runtime/version limitations instead of claiming that one host's
+successful typecheck proves every platform.

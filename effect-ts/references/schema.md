@@ -1,9 +1,12 @@
 # Schema: models, validation, codecs, typed errors
 
+Requires: [core](core.md). Code blocks with undefined domain names are API sketches;
+verify exact overloads in [source and coverage](source-and-coverage.md).
+
 `Schema.Codec<Type, Encoded, DecodingServices, EncodingServices>`. Decoding
 turns untrusted `Encoded` (JSON, strings, rows) into `Type`; encoding reverses
 it. Every boundary decodes; domain code only sees `Type`. v4 renamed most of
-the v3 surface; the names below are verified against `effect@4.0.0-rc.112`.
+the v3 surface; the names below are verified against `effect@4.0.0-rc.115`.
 
 ## Building schemas
 
@@ -27,7 +30,7 @@ Schema.fromJsonString(S)                                 // string <-> S (was pa
 Schema.suspend((): Schema.Codec<Tree> => Tree)           // recursion
 ```
 
-Classes (opaque nominal types with a constructor and static codec):
+Classes (validated value types with a constructor and static codec; add brands/private fields when nominal identity is needed):
 
 ```ts
 class User extends Schema.Class<User>("app/User")({ id: UserId, name: Schema.NonEmptyString, role: Schema.Literals(["admin", "member"]) }) {
@@ -81,7 +84,7 @@ const Csv = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), Sche
   decode: SchemaGetter.trim<string>().compose(SchemaGetter.split<string>({ separator: "," })),
   encode: SchemaGetter.transform((arr: ReadonlyArray<string>) => arr.join(","))
 })))
-const Parsed = Schema.String.pipe(Schema.decodeTo(Schema.Date, SchemaTransformation.transformOrFail({
+const Parsed = Schema.String.pipe(Schema.decodeTo(Schema.Date, SchemaTransformation.transformEffect({
   decode: (s, options) => { const d = new Date(s); return isNaN(d.getTime()) ? Effect.fail(new SchemaIssue.InvalidValue({ message: "bad date" }, s, options)) : Effect.succeed(d) },
   encode: (d) => Effect.succeed(d.toISOString())
 })))
@@ -92,7 +95,7 @@ Schema.Struct({ n: Schema.Natural.pipe(Schema.withDecodingDefault(Effect.succeed
 Schema.optionalKey(S).pipe(Schema.decodeTo(S, { decode: SchemaGetter.withDefault(Effect.succeed(d)), encode: SchemaGetter.passthrough() }))
 ```
 
-`SchemaGetter` legs: `transform`, `transformOrFail`, `transformOptional`,
+`SchemaGetter` legs: `transform`, `transformEffect`, `transformOptional`,
 `withDefault`, `required`, `onNone`, `onSome`, `String()`, `Number()`, `trim`,
 `split`, `parseJson`, `stringifyJson`, `snakeToCamel`, `decodeBase64`, `encodeHex`...
 `SchemaTransformation` presets: `trim`, `toLowerCase`, `numberFromString`,
@@ -123,7 +126,7 @@ Map it to a domain error at the boundary:
 
 Derived tools: `Schema.toJsonSchemaDocument(S, { additionalProperties, generateDescriptions })`
 (no `toJsonSchema`), `JsonSchema.toDocumentDraft07(doc)`, `Schema.toStandardSchemaV1(S)`,
-`Schema.toEquivalence(S)`, `Schema.toArbitrary(S)` (fast-check), `Schema.toFormatter(S)`,
+`Schema.toEquivalence(S)`, `Arbitrary.schema(S)` from `effect/unstable/arbitrary/Arbitrary`, `Schema.toFormatter(S)`,
 `Schema.toType(S)` / `Schema.toEncoded(S)` (drop transformations), `Schema.revealCodec(S)`.
 
 ## Errors
@@ -135,7 +138,7 @@ class StoreError extends Schema.TaggedError<StoreError>()("StoreError", { reason
 return yield* new NotFound({ id })     // yieldable; message auto-derived; JSON codec for RPC/HTTP
 ```
 
-`Schema.TaggedError` is the default for all errors. `Data.TaggedError("Tag")<Fields>`
+`Schema.TaggedError` is useful for domain errors that need codecs. `Data.TaggedError("Tag")<Fields>`
 when no codec is wanted. Reason-nesting keeps service signatures to one error
 type while `Effect.catchReason(s)` / `unwrapReason` reach the specifics.
 
@@ -176,3 +179,26 @@ const asserts = new TestSchema.Asserts(User)
 await asserts.decoding().succeed(json, expected); await asserts.decoding().fail(bad, "Expected string")
 await asserts.encoding().succeed(value, encoded); await asserts.verifyLosslessTransformation()
 ```
+
+## JSON, derivation and correctness
+
+`Schema.BigInt` and `Schema.Uint8Array` describe in-memory values, not JSON-safe
+wire representations. Use an explicit string/base64 codec or `Schema.toCodecJson`
+when producing a JSON-compatible representation. Encode with the chosen codec,
+then test JSON stringify/parse and decode. Schema.Defect preserves useful failure
+information but neither redacts secrets nor losslessly reconstructs every thrown
+JavaScript object. Do not expose it directly as a public HTTP error.
+
+Schema supports effectful decode/encode with independent requirements, optional
+keys/defaults, recursion, brands/refinements, transformations, tagged unions,
+class extension, annotations and format/issue customization. Derived tools
+include JsonSchema documents, Standard Schema interoperability, arbitrary
+generation, formatting and equivalence. Advanced SchemaAST, SchemaParser,
+SchemaGetter, SchemaTransformation and SchemaRepresentation APIs are for custom
+codec/tooling implementations; search the inventory before recreating them.
+
+Defaults and transforms can alter behavior: trimming, case-folding, accepting
+numeric strings, excess-property stripping and absent-vs-undefined semantics must
+be deliberate in migration. A codec need not be lossless (normalization/rounding
+may be intended); test its specified laws rather than demanding identity for a
+lossy transform. `new Class`/`.make` can throw; decode untrusted data effectfully.

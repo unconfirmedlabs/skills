@@ -1,7 +1,10 @@
 // Minimal Effect script: read a JSON file, validate it, print a summary.
 // Run: bun run script.ts ./input.json
-import { BunRuntime, BunServices } from "@effect/platform-bun"
-import { Effect, FileSystem, Schema } from "effect"
+import * as BunRuntime from "@effect/platform-bun/BunRuntime"
+import * as BunServices from "@effect/platform-bun/BunServices"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Schema from "effect/Schema"
 
 class Task extends Schema.Class<Task>("Task")({
   id: Schema.Int,

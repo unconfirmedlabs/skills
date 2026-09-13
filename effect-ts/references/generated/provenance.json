@@ -1,0 +1,132 @@
+{
+  "repository": "https://github.com/Effect-TS/effect",
+  "commit": "4a05d4914fa2327a42bd75fe77c22c188becf3b4",
+  "effectVersion": "4.0.0-rc.115",
+  "packages": [
+    {
+      "name": "@effect/ai-anthropic",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/ai-openai",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/ai-openai-compat",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/ai-openrouter",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/atom-react",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/atom-solid",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/atom-vue",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/docgen",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/doctest",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/openapi-generator",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/opentelemetry",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/platform-browser",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/platform-bun",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/platform-deno",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/platform-node",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/platform-node-shared",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-clickhouse",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-d1",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-libsql",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-mssql",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-mysql2",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-pg",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-pglite",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-sqlite-bun",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-sqlite-do",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-sqlite-node",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-sqlite-react-native",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/sql-sqlite-wasm",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "@effect/vitest",
+      "version": "4.0.0-rc.115"
+    },
+    {
+      "name": "effect",
+      "version": "4.0.0-rc.115"
+    }
+  ],
+  "modules": 585,
+  "leafModules": 535,
+  "exports": 12300,
+  "generator": "scripts/build-coverage.mjs",
+  "typescript": "5.9.3"
+}

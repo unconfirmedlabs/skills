@@ -1,5 +1,7 @@
 # Cloudflare runtime and build
 
+Requires: [services](../services.md), [streams](../streams.md).
+
 ## Bindings and configuration
 
 Define bindings in `wrangler.jsonc` and run `wrangler types` after every config
@@ -30,17 +32,19 @@ across invocations.
 ## Cancellation and background work
 
 `Effect.tryPromise` supplies an `AbortSignal`; pass it to `fetch` and any API
-that accepts cancellation. A client disconnect can then interrupt upstream work
-and Effect finalizers can run.
+that accepts cancellation. Wire the incoming Request.signal to the outer runner and propagate the supplied
+signal through any newly constructed Request sent to the Web handler. Merely
+checking signal.aborted once does not propagate later timeout/cancellation.
+A binding that has no cancellation API can finish remotely after interruption.
 
 The Fetch response must await all work needed for correctness. For optional
 post-response work, turn the background Effect into a Promise only at the
-entrypoint and pass it to `ctx.waitUntil`. Catch/log its failure inside the
-Effect so it does not become an unobserved rejection:
+entrypoint and pass it to `ctx.waitUntil`. Observe failure inside the Effect and let the waitUntil-owned Promise reflect
+its actual exit (Cloudflare observes rejection):
 
 ```ts
 const background = audit(event).pipe(
-  Effect.catchCause((cause) => Effect.logError("audit failed", cause))
+  Effect.tapCause((cause) => Effect.logError("audit failed", cause))
 )
 
 ctx.waitUntil(Effect.runPromise(background))

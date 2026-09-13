@@ -1,5 +1,9 @@
 # HTTP servers, typed APIs, clients, RPC
 
+Requires: [services](services.md), [Schema](schema.md), [streams](streams.md).
+Code blocks are API sketches with domain placeholders; compile the chosen slice
+and inspect exact source overloads before use.
+
 Imports: `effect/unstable/httpapi` (HttpApi, HttpApiGroup, HttpApiEndpoint,
 HttpApiSchema, HttpApiError, HttpApiMiddleware, HttpApiSecurity, HttpApiBuilder,
 HttpApiClient, HttpApiTest, HttpApiScalar, HttpApiSwagger, OpenApi),
@@ -54,9 +58,9 @@ class Api extends HttpApi.make("my-api").add(UsersGroup).add(SystemGroup)
 const UsersHandlers = HttpApiBuilder.group(Api, "users", Effect.fn(function*(handlers) {
   const users = yield* Users
   return handlers.handleAll({
-    list: ({ query }) => users.list(query.search).pipe(Effect.orDie),
+    list: ({ query }) => users.list(query.search), // declare/map its actual errors on the endpoint
     getById: ({ params }) => users.getById(params.id),               // error type must match the endpoint's error schema
-    create: ({ payload }) => users.create(payload).pipe(Effect.orDie),
+    create: ({ payload }) => users.create(payload), // include recoverable failures in the contract
     update: ({ params, payload }) => users.update(params.id, payload),
     remove: ({ params }) => users.remove(params.id)
   })
@@ -78,8 +82,9 @@ const { handler, dispose } = HttpRouter.toWebHandler(Routes.pipe(Layer.provide(H
 `BunHttpServer.layer(options)` accepts Bun serve options (`port`, `hostname`,
 `unix`, `websocket`) plus `gracefulShutdownTimeout`. `layerConfig` reads from
 `Config`; `layerTest` binds an ephemeral port and provides an `HttpClient`.
-Domain errors unrelated to the endpoint contract: `Effect.orDie` (500) or map
-with `Effect.catchReasons("UsersError", { UserNotFound: Effect.fail }, Effect.die)`.
+Map domain failures to declared public endpoint errors. Treat defects as internal
+500s without leaking causes; do not turn recoverable failures into defects just
+to satisfy an endpoint signature.
 
 ### Middleware and security
 
@@ -118,7 +123,7 @@ routes) or `HttpRouter.middleware(fn, { global: true })`; `HttpMiddleware.logger
 class ApiClient extends Context.Service<ApiClient, HttpApiClient.ForApi<typeof Api>>()("app/ApiClient") {
   static readonly layer = Layer.effect(ApiClient, HttpApiClient.make(Api, {
     baseUrl: "http://localhost:3000",
-    transformClient: (c) => c.pipe(HttpClient.retryTransient({ schedule: Schedule.exponential(100), times: 3 }))
+    transformClient: (c) => c // add retries only for endpoints with a proven safe retry policy
   })).pipe(Layer.provide(AuthorizationClient), Layer.provide(FetchHttpClient.layer))
 }
 const client = yield* ApiClient
@@ -168,10 +173,10 @@ mutators `setStatus/setHeader/setHeaders/setCookie/setBody`. Requests:
 ```ts
 const client = (yield* HttpClient.HttpClient).pipe(
   HttpClient.mapRequest(flow(HttpClientRequest.prependUrl(baseUrl), HttpClientRequest.acceptJson, HttpClientRequest.bearerToken(token))),
-  HttpClient.filterStatusOk,
-  HttpClient.retryTransient({ schedule: Schedule.exponential(100), times: 3 })
+  HttpClient.filterStatusOk
 )
-const todos = yield* client.get("/todos", { urlParams: { page: 1 } }).pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Array(Todo))))
+const readClient = client.pipe(HttpClient.retryTransient({ schedule: Schedule.exponential(100), times: 3 })) // only safe reads
+const todos = yield* readClient.get("/todos", { urlParams: { page: 1 } }).pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Array(Todo))))
 const created = yield* HttpClientRequest.post("/todos").pipe(HttpClientRequest.schemaBodyJson(NewTodo)(input), Effect.flatMap(client.execute), Effect.flatMap(HttpClientResponse.schemaBodyJson(Todo)))
 yield* client.get("/big").pipe(HttpClientResponse.stream, Stream.run(fs.sink("out.bin")))
 res.pipe(HttpClientResponse.matchStatus({ 404: () => ..., "2xx": ..., orElse: ... }))
@@ -211,6 +216,31 @@ lets it run concurrently with others on the same connection.
 
 Bridge with `ManagedRuntime.make(AppLayer, { memoMap: Layer.makeMemoMapUnsafe() })`
 and `runtime.runPromise(Service.use((s) => s.method(...)))` per request;
-`runtime.dispose()` on SIGINT/SIGTERM. Decode bodies with
-`Schema.decodeUnknownSync` at the edge. Move to `HttpApi` when the handlers
-are all Effects.
+`runtime.dispose()` on SIGINT/SIGTERM. Decode bodies effectfully inside the bridge or explicitly translate synchronous
+Schema failures at the host edge. Move to HttpApi when contract consolidation
+is useful and included in the task; retaining the framework is valid.
+
+## HTTP/RPC contract and lifetime checks
+
+Decide HttpApi versus HttpRouter from contract needs, not a universal JSON rule.
+HttpApi supplies shared schemas, clients and OpenAPI; HttpRouter retains lower-level
+response control. Authentication middleware must provide identity at the correct
+request lifetime and filter secrets out of encoded errors/logs. CORS is not auth.
+
+Use HttpClient status filtering explicitly: a received HTTP failure status and a
+transport failure differ. Decode the chosen response body, bound complete-body
+reads, and scope streaming bodies through consumption. Retry only when method and
+remote idempotency permit it. Preserve signals across host bridges.
+
+Test status/headers/body/HEAD/no-content behavior, malformed input, middleware
+errors, security policy, redirects/cookies, multipart limits and streaming cancel.
+In-memory HttpApiTest/RpcTest prove contract composition, while live local host
+tests prove adapter behavior. Static-server, websocket, SSE, multipart, URL/cookie
+helpers and OpenAPI generation are separately discoverable in the inventory.
+
+For RPC choose framing/serialization compatible with the transport (HTTP bytes,
+WebSocket messages, stdio or worker transport). Test cancellation, reconnect,
+streaming and typed errors; a Schema-typed protocol does not supply authentication
+or exactly-once delivery. `@effect/openapi-generator` is useful for generating
+Schema/client/API definitions from an existing OpenAPI contract; review unsupported
+features and round-trip compatibility before replacing a hand-written client.

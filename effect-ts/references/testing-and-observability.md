@@ -1,5 +1,8 @@
 # Testing and observability
 
+Requires: [core](core.md), [services](services.md). Snippets with domain names
+are API sketches; use [source and coverage](source-and-coverage.md) for exact APIs.
+
 ## Tests with `bun test`
 
 Everything under `effect/testing` is plain layers, so `bun:test` needs no adapter.
@@ -68,8 +71,9 @@ await asserts.decoding().fail(null, "Expected string")
 await asserts.verifyLosslessTransformation({ params: { numRuns: 50 } })
 ```
 
-`DateTime.now`, `Random.next`, `Effect.sleep`, `Schedule` all honour the test
-services, which is why production code must go through them.
+`DateTime.now`, sleep and schedules use Clock. Random uses its own configurable
+random service; TestClock alone does not seed it. Inject the appropriate services
+for reproducible behavior.
 
 ### HttpApi and RPC without a socket
 
@@ -157,5 +161,39 @@ is exported: `AppLayer.pipe(Layer.provide(Observability))`. Use
 
 - `bunx tsc --noEmit` clean, including language-service diagnostics if patched.
 - `bun test` green; each test provides its own layers; no real env, clock, or network.
-- Every service method has a span (`Effect.fn("Service.method")`).
-- Errors surface as tagged errors in `Exit`, not thrown strings.
+- Useful operation spans and bounded telemetry; untraced helpers remain valid.
+- Verify expected failures, defects and interruption as distinct Exit/Cause cases.
+
+## Properties, laws and behavioral evidence
+
+Use Schema-generated arbitraries/fast-check for codec laws, pure transitions and
+collection invariants. `effect/unstable/arbitrary/Arbitrary` also supplies schema
+generation, `checkEffect`, `sampleEffect`, shrinking and replay tokens. A generated
+input property needs its own stateful fixture: `checkEffect` does not reset
+mutable services between cases. Capture seed/replay on failure.
+
+For resource/concurrency tests, use Deferred/barriers plus TestClock where time
+matters. Assert cancellation is interruption, acquisition has one matching release,
+critical child errors reach an owner, and retries do not duplicate mutations.
+Use type tests for success/error/requirements and rejected misuse. Do not count
+a compiler pass as runtime validation or a fake's success as backend equivalence.
+
+`TestClock`, `TestConsole`, `TestSchema` and other testing modules are discoverable
+through the inventory. @effect/vitest is an optional runner integration; preserve
+the project's existing runner when plain Effect test services suffice.
+
+## Telemetry lifetime and cardinality
+
+Logger, Tracer and Metric describe in-process instrumentation; OTLP/Prometheus and
+OpenTelemetry adapters export it. Provide exporter dependencies and scope so
+shutdown flushes bounded batches. Worker isolates cannot guarantee a background
+exporter's process-style shutdown; use the invocation's owned background work or
+platform telemetry integration. Logs/spans must not contain raw secrets, unbounded
+request bodies or sensitive Schema.Defect payloads.
+
+Choose low-cardinality metric labels (route template/status category, not user id
+or raw URL). Named Effect.fn is a useful operation boundary; prefer fnUntraced for
+helpers where a span adds noise. ErrorReporter can integrate unexpected failures
+with external reporting; avoid duplicate reporting and preserve interruption as a
+different termination cause. Devtools belongs to development unless explicitly
+configured for another supported environment.

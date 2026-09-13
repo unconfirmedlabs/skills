@@ -1,5 +1,8 @@
 # Core: the Effect type, generators, errors, running
 
+Requires: none. API sketches below need the domain definitions shown as placeholders.
+Exact signatures and every exported operation are in [source and coverage](source-and-coverage.md).
+
 `Effect<A, E, R>`: succeeds with `A`, fails with `E` (expected, typed), needs
 services `R`. Defects (bugs, `Effect.die`) are not in `E`. Interruption is a
 third outcome. `Exit<A, E>` is the materialized result; `Cause<E>` carries
@@ -13,9 +16,9 @@ import { Effect, Schema } from "effect"
 class ParseError extends Schema.TaggedError<ParseError>()("ParseError", { input: Schema.String, cause: Schema.Defect() }) {}
 
 // Effect.gen for blocks; yield* unwraps Effects, Config values, Context.Service keys, and TaggedError instances.
-// Option and Result are NOT yieldable in rc.112: lift with Effect.fromOption(o) / Effect.fromResult(r) / Effect.fromNullishOr(x).
+// Option and Result are NOT yieldable in rc.115: lift with Effect.fromOption(o) / Effect.fromResult(r) / Effect.fromNullishOr(x).
 const program = Effect.gen(function*() {
-  const cfg = yield* Config.string("NAME")
+  const cfg = yield* Config.String("NAME")
   const users = yield* Users                              // service
   const user = yield* Effect.fromNullishOr(yield* users.find(cfg))   // undefined -> NoSuchElementError
   if (!user.name) return yield* new ParseError({ input: cfg, cause: "empty" })   // always `return yield*` on failure
@@ -34,12 +37,12 @@ export const parse = Effect.fn("parse")(
 // Effect.fn("Name")({ self: this }, function*(this: Counter, n: number) {...}) binds this.
 ```
 
-Constructors: `succeed`, `fail`, `die`, `sync` (must not throw), `promise`
-(must not reject), `try({ try, catch })`, `tryPromise({ try: (signal) => ..., catch })`,
+Constructors: `succeed`, `fail`, `die`, `sync` (throws become defects), `promise`
+(rejections become defects), `try({ try, catch })`, `tryPromise({ try: (signal) => ..., catch })`,
 `callback((resume, signal) => { ...; return cleanupEffect })`, `suspend(() => effect)`,
 `fromNullishOr(value)` (fails `NoSuchElementError`), `Effect.void`, `Effect.never`.
 
-Combinators (all dual: `Effect.map(eff, f)` or `eff.pipe(Effect.map(f))`):
+Many combinators are dual (verify each overload: `Effect.map(eff, f)` or `eff.pipe(Effect.map(f))`):
 `map`, `flatMap`, `andThen(f | effect)`, `tap(f | effect)`, `as(value)`, `asVoid`,
 `zip`, `zipWith`, `all([...] | {...}, { concurrency, discard, mode: "default" | "result" })`,
 `forEach(items, f, { concurrency, discard })`, `partition` (`[failures, successes]`),
@@ -51,7 +54,7 @@ Combinators (all dual: `Effect.map(eff, f)` or `eff.pipe(Effect.map(f))`):
 
 ## Errors
 
-Define every expected error as a class with a unique `_tag`:
+Use discriminated errors when callers need selective recovery; retain deliberate upstream typed failures. For example:
 
 ```ts
 class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { id: Schema.String }) {}
@@ -92,9 +95,10 @@ effect.pipe(
 )
 ```
 
-Rules: handle at the layer that can decide; map to a domain error at service
-boundaries; `orDie` only for errors the caller cannot act on; never `catch` to
-swallow. `Cause.squash(cause)` extracts the most relevant error;
+Rules: recover where policy is known; map boundary errors when domain semantics change.
+Use `orDie` only for a violated invariant or an explicitly fatal policy, never to
+hide an inconvenient typed error. `catchCause` includes interruption: re-fail an
+interrupted cause unless the boundary deliberately handles cancellation. `Cause.squash(cause)` extracts the most relevant error;
 `Cause.pretty(cause)` renders; `Cause.hasFails/hasDies/hasInterrupts`,
 `Cause.findErrorOption`. Exit: `Exit.isSuccess/isFailure`, `Exit.match(exit, { onSuccess, onFailure })`.
 
@@ -104,7 +108,7 @@ swallow. `Cause.squash(cause)` extracts the most relevant error;
 Option.some(1); Option.none(); Option.fromNullishOr(x); Option.getOrElse(o, () => d); Option.getOrUndefined(o)
 Option.map / flatMap / filter / match(o, { onNone, onSome }); Option.isSome(o) narrows; yield* Effect.fromOption(o) fails with NoSuchElementError on None
 Result.succeed(a); Result.fail(e); Result.isSuccess(r); Result.match(r, { onSuccess, onFailure }); Result.getOrElse; Result.merge
-yield* Effect.fromResult(r)   // Failure -> error channel. Neither Option nor Result can be yield*ed directly in rc.112; Effect.result / Effect.option go the other way
+yield* Effect.fromResult(r)   // Failure -> error channel. Neither Option nor Result can be yield*ed directly in rc.115; Effect.result / Effect.option go the other way
 
 // Match: exhaustive dispatch on tagged unions / values
 const describe = Match.type<Shape>().pipe(
@@ -148,7 +152,8 @@ Effect.runPromiseWith(context)(effect) // run an effect that still needs R
 BunRuntime.runMain(effect)             // process entrypoint: signals, exit code, error report
 ```
 
-Everything above requires `R = never`; provide layers first. Only call `run*`
+Unbound runners require `R = never`; `run*With(context)` satisfies the context
+requirements explicitly. Platform `runMain` can supply platform-specific behavior. Only call `run*`
 at the program edge, in tests, or inside `ManagedRuntime` bridges.
 
 ## Interop
@@ -165,5 +170,5 @@ at the program edge, in tests, or inside `ManagedRuntime` bridges.
 `Effect.sleep("1 second")`, `Effect.delay(effect, "500 millis")`, `DateTime.now`
 (yieldable; testable via `TestClock`), `Clock.currentTimeMillis`, `Random.next`,
 `Random.nextIntBetween(a, b)`, `Random.shuffle`. `Duration` inputs accept
-`"5 seconds"`, `5000`, or `Duration.seconds(5)`. Never call `Date.now()` or
-`Math.random()` in Effect code.
+`"5 seconds"`, `5000`, or `Duration.seconds(5)`. Use these services when time/randomness affect testable behavior; use Crypto for
+security randomness. Pure date conversion and foreign host APIs remain valid.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Effect on Cloudflare Workers"
-  short_description: "Build robust Effect-powered Workers"
-  default_prompt: "Use $effect-cloudflare-workers to build or review this Cloudflare Worker with Effect v4."

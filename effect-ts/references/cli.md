@@ -1,5 +1,8 @@
 # CLI, processes, filesystem, stdio
 
+Requires: [services](services.md), [Schema](schema.md), [streams](streams.md).
+API sketches below need their domain definitions and target-version verification.
+
 Imports: `effect/unstable/cli` (Command, Flag, Argument, Prompt, GlobalFlag,
 CliConfig, CliOutput, CliError, Completions), `effect` (FileSystem, Path,
 Stdio, Terminal, Console, PlatformError), `effect/unstable/process`
@@ -7,25 +10,25 @@ Stdio, Terminal, Console, PlatformError), `effect/unstable/process`
 (KeyValueStore), `effect/unstable/encoding` (Ndjson, Msgpack, Yaml, Toml, Ini).
 `BunServices.layer` from `@effect/platform-bun` satisfies every requirement.
 
-Pair this reference with the `cli-design` skill: stdout carries
+For broader product design, the optional `cli-design` skill can help. The local contract is: stdout carries
 data, stderr carries diagnostics, exit status is typed, no implicit prompts.
 
 ## Commands
 
 ```ts
 const root = Command.make("tasks").pipe(
-  Command.withSharedFlags({ json: Flag.boolean("json").pipe(Flag.withDefault(false)) }),   // visible to subcommands
+  Command.withSharedFlags({ json: Flag.Boolean("json").pipe(Flag.withDefault(false)) }),   // visible to subcommands
   Command.withDescription("Track tasks")
 )
 
 const create = Command.make(
   "create",
   {
-    title: Argument.string("title").pipe(Argument.withSchema(Schema.NonEmptyString)),
-    priority: Flag.choice("priority", ["low", "normal", "high"]).pipe(Flag.withDefault("normal")),
-    assignee: Flag.string("assignee").pipe(Flag.withSchema(Email), Flag.optional),     // Option<string>
-    tags: Flag.string("tag").pipe(Flag.atLeast(0)),                                    // repeated flag -> ReadonlyArray
-    files: Argument.string("files").pipe(Argument.variadic({ min: 1 }))
+    title: Argument.String("title").pipe(Argument.withSchema(Schema.NonEmptyString)),
+    priority: Flag.Literals("priority", ["low", "normal", "high"]).pipe(Flag.withDefault("normal")),
+    assignee: Flag.String("assignee").pipe(Flag.withSchema(Email), Flag.optional),     // Option<string>
+    tags: Flag.String("tag").pipe(Flag.atLeast(0)),                                    // repeated flag -> ReadonlyArray
+    files: Argument.String("files").pipe(Argument.variadic({ min: 1 }))
   },
   Effect.fn(function*({ title, priority, assignee, tags, files }) {
     const { json } = yield* root          // a Command is an Effect: yield* the parent to read shared flags
@@ -48,24 +51,24 @@ root.pipe(
 - `Command.runWith(cmd, { version })(argv)` for tests; `Command.run` reads `Stdio.args`.
 - Built-in global flags: `--help/-h`, `--version/-v`, `--completions bash|zsh|fish`,
   `--log-level`, wizard mode. Add your own once:
-  `const jsonOut = GlobalFlag.setting("json-output")({ flag: Flag.boolean("json").pipe(Flag.withDefault(false)) })`,
+  `const jsonOut = GlobalFlag.Setting("json-output")({ flag: Flag.Boolean("json").pipe(Flag.withDefault(false)) })`,
   read it in any handler with `yield* jsonOut`, and apply
   `Command.withGlobalFlags([jsonOut])` to the root **after** `withSubcommands`
   (it removes the setting from the requirements of every handler beneath it).
-  `GlobalFlag.action({ flag, run })` for side-effect flags that exit.
+  `GlobalFlag.Action({ flag, run })` for side-effect flags that exit.
 - Output rendering: `CliOutput.layer(CliOutput.defaultFormatter({ colors: false }))`.
   Colors off and no prompts when `Stdio.stdoutIsTerminal` / `stdinIsTerminal` is false.
 
 ### Flags and arguments
 
-Constructors: `string, boolean, integer, float, date, choice(name, [...])`,
-`choiceWithValue(name, [["a", A]])`, `path({ pathType, mustExist })`, `file`,
-`directory`, `redacted` (Redacted<string>), `fileText`, `fileParse`
-(json/yaml/toml/ini by extension), `fileSchema(name, schema)`, `keyValuePair`
-(Record<string,string>), `none`.
+Constructors in rc.115 are capitalized: `String, Boolean` (Flag), `Int, Finite, Date, Literals(name, [...])`,
+`ChoiceWithValue(name, [["a", A]])`, `Path(name, { pathType, mustExist })`, `File`,
+`Directory`, `Redacted` (Redacted<string>), `FileText`, `FileParse`
+(json/yaml/toml/ini by extension), `FileSchema(name, schema)`, `KeyValuePair` (Flag)
+(Record<string,string>), `Never`.
 
 Modifiers: `withAlias` (Flag only), `withDescription`, `withMetavar`, `withHidden`,
-`withDefault(value | Effect)`, `optional` (Option), `withFallbackConfig(Config.string("X"))`
+`withDefault(value | Effect)`, `optional` (Option), `withFallbackConfig(Config.String("X"))`
 (env var fallback), `withFallbackPrompt(prompt)` (only when interactive),
 `withSchema(schema)`, `map`, `mapEffect`, `mapTryCatch`, `filter`, `filterMap`,
 `orElse`, `atLeast(n)`, `atMost(n)`, `between(min, max)`, `Argument.variadic({ min, max })`.
@@ -77,21 +80,26 @@ Modifiers: `withAlias` (Flag only), `withDescription`, `withMetavar`, `withHidde
 Parse errors render help and exit 1. Handler failures propagate to
 `BunRuntime.runMain`, which prints the cause and exits 1. To control the code,
 fail with `new CliError.UserError({ cause })` or attach `Runtime.errorExitCode`.
-Print machine-readable errors yourself with `renderErrors: false` and a
-`Effect.catchTag` at the top of the handler that writes JSON to stderr.
+For machine-readable errors, own the rendering and test actual argv failures.
+In rc.115 `renderErrors: false` disables formatted errors but still prints
+ShowHelp through Console.log. Merely setting that flag does not keep stdout clean.
+The CLI starter separates data into a Stdio stdout sink and routes built-in
+help/version/diagnostics through a stderr Console override. If explicit help must
+go to stdout, implement that policy separately and test both parse failure and
+explicit-help paths.
 
 ## Prompts (interactive only)
 
 ```ts
 const answers = yield* Prompt.all({
-  name: Prompt.text({ message: "Project name?", default: "app", validate: (s) => s.length ? Effect.succeed(s) : Effect.fail("required") }),
-  env: Prompt.select({ message: "Env", choices: [{ title: "staging", value: "staging" }, { title: "prod", value: "prod" }] }),
-  ok: Prompt.confirm({ message: "Continue?", initial: true })
+  name: Prompt.String({ message: "Project name?", default: "app", validate: (s) => s.length ? Effect.succeed(s) : Effect.fail("required") }),
+  env: Prompt.Select({ message: "Env", choices: [{ title: "staging", value: "staging" }, { title: "prod", value: "prod" }] }),
+  ok: Prompt.Confirm({ message: "Continue?", initial: true })
 })
 ```
 
-Also `password`, `hidden`, `toggle`, `multiSelect`, `autoComplete`, `integer`,
-`float`, `date`, `list`, `file`. A `Prompt` is an Effect; cancelling fails with
+Also `Password`, `Hidden`, `Toggle`, `MultiSelect`, `AutoComplete`, `Int`,
+`Number`, `Date`, `List`, `File`. A `Prompt` is an Effect; cancelling fails with
 `Terminal.QuitError`. Guard with `if (yield* (yield* Stdio.Stdio).stdinIsTerminal)`
 or prefer `Flag.withFallbackPrompt` so non-TTY callers get a clean error.
 
@@ -172,4 +180,19 @@ yield* store.set("current", state); const s = yield* store.get("current")   // O
 Layers: `KeyValueStore.layerMemory`, `layerFileSystem(dir)` (one file per key),
 `layerSql()`, `layerStorage(() => localStorage)`. Use this to persist a state
 machine between CLI invocations; write the full state document on every
-transition so a crash never leaves a half-applied step.
+transition only when that write has the atomicity/durability the contract needs. A KV write
+is not atomic with a separate external side effect; use a transaction/outbox or
+reconciliation protocol for that guarantee.
+
+## CLI and process verification
+
+Test the actual executable invocation, not just Command handlers. Assert stdout,
+stderr, exit status, help/version, malformed argv, non-TTY behavior, SIGINT and
+streamed stdin/stdout. Diagnostic logging must not corrupt machine-readable output.
+
+ChildProcess helpers can return stdout from a process that exits nonzero; check
+the exit-code policy explicitly. Concurrently drain both output streams where
+needed to avoid blocking, bound buffering, and define signal/kill escalation and
+cleanup. Pass argument arrays and preserve environment/cwd deliberately. File
+operations also need clear atomic replacement, permissions and symlink policy
+when those affect correctness; a FileSystem service does not invent these rules.

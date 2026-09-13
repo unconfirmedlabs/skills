@@ -1,5 +1,8 @@
 # Streams and sinks
 
+Requires: [core](core.md), [services](services.md). API sketches below need
+domain definitions; find exact versions in [source and coverage](source-and-coverage.md).
+
 `Stream<A, E, R>`: pull-based, chunked, backpressured, interruptible sequence.
 Use for anything larger than memory, unbounded, or time-based: files, process
 output, sockets, SSE, queues, polling, event buses, NDJSON pipelines.
@@ -88,3 +91,26 @@ Failures inside a stream terminate it unless caught with `Stream.catch*`;
 `Stream.retry(schedule)` re-subscribes from the source. Streams are lazy: nothing
 runs until a `run*` is executed, and each run is an independent subscription
 unless multicast.
+
+## Advanced streaming and host bridges
+
+Use Sink when folding, consuming bounded groups or managing leftovers matters.
+Use Channel/Pull for custom streaming operators and protocols that need control
+over input, output, completion and chunks; prefer Stream composition otherwise.
+`Cause.Done` is stream completion, not a domain failure. `ChannelSchema` validates
+channel boundaries. NDJSON/Msgpack channels frame records; arbitrary byte chunks
+are not guaranteed to align with UTF-8 characters, lines or complete messages.
+
+A concurrency option can preserve output order by buffering; unordered output
+changes the contract. Define memory bounds at each queue/buffer and fan-out, and
+account for one slow subscriber. `runCollect` has no automatic memory bound.
+
+Retry reopens a stream and may repeat already-emitted values or mutations.
+Checkpoint/deduplicate or document at-least-once delivery. Verify early `take`,
+consumer failure, aborted Web streams and AsyncIterator.return release source
+resources. A scoped connection must remain open through body consumption.
+
+For callbacks, return cancellation/unsubscribe cleanup and choose overflow policy.
+For native ReadableStream/AsyncIterable conversion, inspect whether conversion
+creates a runtime and how cancellation/failure crosses the boundary; do not turn
+a lazy stream into a fully buffered Promise just for interoperability.

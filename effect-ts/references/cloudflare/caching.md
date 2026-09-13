@@ -1,5 +1,7 @@
 # Workers caching
 
+Requires: [HTTP](../http.md), [runtime and build](runtime-and-build.md).
+
 Cloudflare now has two different mechanisms whose names are easy to conflate.
 Choose deliberately.
 

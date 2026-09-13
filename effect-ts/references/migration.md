@@ -1,145 +1,131 @@
-# Migration: v3 to v4, and adopting Effect in existing code
+# Migrate TypeScript to Effect with checked behavioral equivalence
 
-## Adopt Effect incrementally (non-Effect codebase)
+Requires: [core](core.md), [services](services.md), [Schema](schema.md),
+[testing and observability](testing-and-observability.md). Add the source and
+runtime modules for each slice; library/public API migration also needs
+[library](library/index.md).
 
-Keep the project shippable after every step. Order by impact.
+## Establish the contract before converting
 
-1. **Bridge at the edges.** Create `src/runtime.ts`:
-   ```ts
-   export const runtime = ManagedRuntime.make(AppLayer, { memoMap: Layer.makeMemoMapUnsafe() })
-   // in a handler: await runtime.runPromise(effect)
-   // shutdown:     runtime.dispose()
-   ```
-   Existing Hono/Express/Bun.serve handlers call `runtime.runPromise`; nothing
-   else changes. `AppLayer` starts as `Layer.empty` and grows.
-2. **Schema at boundaries.** Replace manual validation of request bodies, env,
-   JSON files, and DB rows with `Schema.Class` / `Schema.Struct` and
-   `Schema.decodeUnknownEffect`. Export the types from `domain/`. This is where
-   most runtime bugs live and where every later step gets its types.
-3. **Wrap externals as services.** For each SDK/DB/HTTP client: define
-   `Context.Service` with an interface of `Effect`-returning methods, implement
-   with `Effect.tryPromise({ try, catch: (cause) => new XError({ cause }) })`,
-   attach `static layer`. Add it to `AppLayer`. Callers still use the runtime.
-4. **Replace control flow.** Hand-written retry loops, `Promise.all`,
-   `setTimeout` races, and `AbortController` become `Effect.retry`,
-   `Effect.forEach({ concurrency })`, `Effect.timeout`, interruption.
-5. **Move state.** Module-level mutable variables become `Ref`/`SubscriptionRef`
-   inside a service with explicit transition functions.
-6. **Flip the entrypoint.** When handlers are all Effects, replace the framework
-   router with `HttpApi`/`HttpRouter` and `Layer.launch`, or keep the framework
-   and leave the runtime bridge; both are valid.
+Inventory entrypoints, public exports, input/output representations, exceptions,
+async callbacks, retries/timeouts, globals, listeners/timers, streams, databases,
+transaction boundaries, caches and mutation protocols. Read production-facing
+examples and existing tests. Record the actual runtime, dependencies and lockfile.
 
-Rules while mixing: never `await` inside `Effect.gen` (use `Effect.promise` /
-`tryPromise`); never throw from Effect code; never run effects from inside other
-effects (`runPromise` nested) except through `ManagedRuntime` at a true edge.
+For each operation, identify:
 
-## Effect v3 to v4 rename map
+- success values, absence semantics, ordering and side effects;
+- failure classes/status codes/exit codes, defects and cancellation behavior;
+- accepted/rejected inputs, normalization, missing/null/undefined and excess keys;
+- wire bytes, serialization, HTTP headers, CLI stdout/stderr and streaming shape;
+- dependency lifetime, resource release and what remains after cancellation;
+- concurrency, retries, deadline placement, idempotency and ambiguous outcomes;
+- durability, restart/redelivery behavior, schema and external compatibility.
 
-Apply mechanically before anything else. Compile errors guide the rest.
+Turn important existing behavior into characterization tests. Separate a desired
+behavior change from a behavior-preserving refactor: e.g. adding cancellation,
+validation, bounded fan-out or a timeout changes semantics even if it is useful.
+State the intended new contract instead of calling that equivalent.
 
-### Packages and imports
-| v3 | v4 |
+## Convert one vertical slice
+
+1. Keep the current entrypoint/framework. Add a scoped runtime bridge or an
+   explicit adapter at the real host boundary. Existing Promise callers can
+   keep their signatures while the inside becomes Effect.
+2. Model input/output/error contracts. Decode foreign values with Schema, but
+   preserve existing acceptance/normalization behavior unless changing it is
+   part of the task. Encode outputs; a decoded Class is not automatically the
+   legacy JSON payload.
+3. Put the external capability behind a small service. Wrap possible throw/reject
+   with `Effect.try`/`tryPromise`, mapping unknown failures to truthful errors.
+   Forward supported signals; keep remote outcome ambiguity after cancellation.
+4. Compose the operation with Effect.gen/fn. Retain caller-visible `A`, `E`, `R`
+   and translate errors only where the old/new boundary requires it. A Promise
+   facade's rejected value may differ from an Exit; test that contract.
+5. Replace manual scheduling/concurrency/resources with matching Effect semantics.
+   Select first-success vs first-exit race, sibling cancellation vs all-results,
+   inner vs outer timeout, retry classification and scope lifetime deliberately.
+6. Compare old/new results and observable traces with the same inputs and
+   deterministic dependency scripts. Avoid executing a real mutation twice in
+   differential tests; use isolated stores, captured replay inputs or fakes.
+7. Route the slice through the new path once its checks pass. Keep a rollback
+   seam appropriate to deployment/storage risk. Remove its dead adapters and
+   duplicated retry/error/validation logic after callers have moved.
+
+Finish one coherent slice before bulk mechanical expansion. The framework can
+remain when it still owns a useful host contract. If replacing it is part of the
+task, migrate HTTP/CLI behavior explicitly and verify the exported edge.
+
+## Maximal adoption audit
+
+Map each remaining custom mechanism to its Effect equivalent and disposition:
+
+| Existing mechanism | Candidate |
 |---|---|
-| `@effect/platform/Http*`, `HttpApi*` | `effect/unstable/http/*`, `effect/unstable/httpapi/*` |
-| `@effect/platform/{FileSystem,Path,Terminal}` | `effect/{FileSystem,Path,Terminal}` (core) |
-| `@effect/platform/Command`, `CommandExecutor` | `effect/unstable/process/ChildProcess`, `ChildProcessSpawner` |
-| `@effect/platform/KeyValueStore` | `effect/unstable/persistence/KeyValueStore` |
-| `@effect/cli/{Args,Options,Command}` | `effect/unstable/cli/{Argument,Flag,Command}` |
-| `@effect/sql/*`, `@effect/rpc/*`, `@effect/cluster/*`, `@effect/workflow/*`, `@effect/ai/*` | `effect/unstable/{sql,rpc,cluster,workflow,ai}/*` |
-| `@effect/schema` | `effect/Schema` (rewritten; see below) |
-| `effect/Either` | `effect/Result` (`Either.right`→`Result.succeed`, `Either.left`→`Result.fail`, `Effect.either`→`Effect.result`) |
-| `effect/JSONSchema` | `effect/JsonSchema` |
-| `effect/T{Ref,Map,Set,Queue,PubSub,Semaphore,Deferred,PriorityQueue,ReentrantLock,SubscriptionRef}` | `effect/Tx{Ref,HashMap,HashSet,Queue,PubSub,Semaphore,Deferred,PriorityQueue,ReentrantLock,SubscriptionRef}` |
-| `Mailbox` | `Queue` (Queue now carries end/fail signalling) |
-| `@effect/platform-bun` | unchanged; same version as `effect` |
+| Runtime validation/manual JSON conversions | Schema/codec, Config |
+| Promise chains and throw/catch taxonomy | Effect composition and typed errors |
+| Global clients/dependency injection | Context + scoped Layers |
+| Timers/retry loops/timeout races | Clock, Schedule, retry/timeout with matching semantics |
+| Promise.all, ad-hoc pools/locks | all/forEach, Semaphore, Ref/Tx collections |
+| Event listeners/async iterables/unbounded buffering | Stream/Queue/PubSub with owned cleanup |
+| Manual acquire/finally/pool bookkeeping | Scope, acquireRelease, Pool/Rc resources |
+| Caches and batch lookups | Cache/ScopedCache/RequestResolver |
+| HTTP/CLI/SQL/AI/custom RPC framework pieces | Relevant Effect capability and host adapter |
+| UI async state and subscriptions | Atom/AtomRegistry + framework adapter |
+| Durable job loops and multi-step operations | Persistent queue/workflow/cluster only when needed |
+| Pure helpers/collections/parsing | Standard library modules where they improve clarity |
 
-### Services and context
-| v3 | v4 |
+Classify each seam as converted, intentionally pure/native, unsupported adapter,
+or deferred with a concrete reason. Do not force wrappers around arithmetic,
+pure domain functions or the host's unavoidable native handler. Maximal adoption
+should remove competing mechanisms, not add ceremonial services to every value.
+
+## Effect v3 to v4
+
+Pin intended compatible packages and work from the matching v4 checkout's
+`migration/` guides and generated annotations. Verify each replacement in source:
+even an upstream migration page can be stale. In rc.115 Option/Result are not
+directly yieldable despite old migration notes saying otherwise.
+
+| v3 seam | v4 direction and semantic review |
 |---|---|
-| `class X extends Context.Tag("X")<X, Shape>()` | `class X extends Context.Service<X, Shape>()("X")` (type params first) |
-| `Context.GenericTag<I>("X")` | `Context.Service<I>("X")` |
-| `Effect.Service<X>()("X", { effect, dependencies })` with `.Default` | `Context.Service<X>()("X", { make })` plus explicit `static layer = Layer.effect(this, this.make).pipe(Layer.provide(...))`; no `dependencies`, no `.Default` |
-| `Effect.Tag` static accessors | `X.use((s) => s.method())`, `X.useSync`; prefer `yield* X` |
-| `FiberRef.make` / `FiberRef.get` / `Effect.locally` | `Context.Reference("id", { defaultValue })` / `yield* Ref` / `Effect.provideService(eff, Ref, value)` |
-| `FiberRef.currentLogLevel`, `currentMinimumLogLevel`, `currentConcurrency`... | `References.CurrentLogLevel`, `References.MinimumLogLevel`, `References.CurrentConcurrency`, `References.CurrentLogAnnotations`, `References.CurrentLogSpans`, `References.Scheduler`, `References.TracerEnabled`, `References.UnhandledLogLevel` |
-| `Effect.runtime<R>()` + `Runtime.runFork(rt)` | `Effect.context<R>()` + `Effect.runForkWith(ctx)`; `Runtime<R>` type removed |
-| `Layer.scoped` | `Layer.effect` (scope handled automatically) |
-| `Layer.tapErrorCause` | `Layer.tapCause` |
-| `Scope.extend` | `Scope.provide` |
-| `Effect.provide(l)` twice building twice | memoized across nested provides; `Layer.fresh` or `Effect.provide(l, { local: true })` to opt out |
+| Context.Tag/GenericTag, Effect.Service defaults | Context.Service with explicit construction/Layer composition; retain key identity and lifetime |
+| Layer.scoped | Layer.effect owns scoped acquisition; check memoization and sharing |
+| Effect.async | Effect.callback; return correct cleanup and wire interruption |
+| catchAll/catchAllCause/catchAllDefect | catch/catchCause/catchDefect; preserve interruption rather than swallowing all causes |
+| fork/forkDaemon | forkChild/forkDetach; revisit ownership and observe failure |
+| Either/Effect.either | Result/Effect.result; use fromResult/fromOption to lift values |
+| FiberRef-based ambient policy | Context.Reference/References and service provisioning; test scope/overrides |
+| TRef/TMap/etc and STM | TxRef/TxHashMap/etc with Effect.tx; replay-safe body, transactional state only |
+| Mailbox / old Queue semantics | Queue carries completion/failure; distinguish Cause.Done from domain failure |
+| Cause tree | Flat reasons; preserve failure/defect/interrupt classification |
+| Schema.Union(A,B), Literal(a,b) | Union([A,B]), Literals([a,b]); inspect tagged/oneOf semantics |
+| Schema.filter/transform/decodeUnknown | check/refinement, decodeTo/SchemaTransformation, decodeUnknownEffect; retest codec laws |
+| parseJson / JSONSchema | fromJsonString / JsonSchema; check draft and encoding direction |
+| optional fields/defaults | optionalKey vs optional, explicit undefined and decoding defaults |
+| Platform, CLI, SQL, RPC, AI family packages | Many moved under effect/unstable; actual platform/SQL/provider adapters remain separate |
+| CLI Options/Args and earlier v4 constructors | Flag/Argument; rc.115 uses String/Boolean/Int/Finite/Literals; Prompt.String/Select/Confirm; verify argv and exit behavior |
+| HttpApi builder and endpoint syntax | v4 options/schema APIs; recheck middleware, errors, HEAD, streaming and clients |
+| Equality/hash and collection keys | v4 equality semantics differ; test caches/dedup/maps with real key values |
 
-### Effect combinators
-| v3 | v4 |
-|---|---|
-| `Effect.async` | `Effect.callback` |
-| `Effect.zipRight` / `zipLeft` | `Effect.andThen` / `Effect.tap` |
-| `Effect.catchAll` / `catchAllCause` / `catchAllDefect` | `Effect.catch` / `catchCause` / `catchDefect` |
-| `Effect.catchSome` / `catchSomeCause` | `Effect.catchFilter(Filter.fromPredicate(...), h)` / `catchCauseFilter` |
-| `Effect.catchSomeDefect`, `forkAll`, `forkWithErrorHandler` | removed |
-| `Effect.tapErrorCause` | `Effect.tapCause` |
-| `Effect.fork` / `forkDaemon` | `Effect.forkChild` / `forkDetach` (all forks take `{ startImmediately?, uninterruptible? }`) |
-| `Effect.makeSemaphore` / `makeLatch` | `Semaphore.make` / `Latch.make` |
-| `Effect.gen(this, fn)` | `Effect.gen({ self: this }, fn)` |
-| `Effect.fromNullable` / `Option.fromNullable` | `Effect.fromNullishOr` / `Option.fromNullishOr` |
-| `yield* ref`, `yield* deferred`, `yield* fiber`, `yield* option`, `yield* either` | `Ref.get(ref)`, `Deferred.await(d)`, `Fiber.join(f)`, `Effect.fromOption(o)`, `Effect.fromResult(r)`; only Effects, Config, Service keys and TaggedError instances are yieldable in rc.112 |
-| new | `Effect.catchReason`, `catchReasons`, `unwrapReason`, `catchEager`, `Effect.fn.Return<A,E,R>` |
+Do not mechanically upgrade every `@effect/*` dependency to one version: inspect
+peer requirements, independently versioned tooling and obsolete merged packages.
+Use compiler diagnostics to guide edits, not `any`/casts or `orDie` to silence them.
 
-### Cause, Exit, equality
-| v3 | v4 |
-|---|---|
-| `Cause` tree (`Sequential`/`Parallel`) | flat `cause.reasons: Array<Fail | Die | Interrupt>`; `Cause.combine` |
-| `Cause.isFailure/isDie/isInterrupted` | `Cause.hasFails/hasDies/hasInterrupts`; per reason `Cause.isFailReason` etc |
-| `Cause.failureOption` / `failures` / `defects` | `Cause.findErrorOption`; `reasons.filter(Cause.isFailReason)`; `Cause.findFail/findDie` return `Result` |
-| `NoSuchElementException`, `TimeoutException` | `NoSuchElementError`, `TimeoutError` (all `*Exception` → `*Error`) |
-| `Equal.equals` reference-based for plain objects | structural by default (objects, arrays, Map, Set, Date, RegExp; NaN equals NaN); `Equal.byReference(obj)` to opt out; `Equal.equivalence`→`Equal.asEquivalence` |
+## Correctness evidence and limits
 
-### Stream
-`Stream.fromChunk`→`fromArray`, `mapChunks`→`mapArray`, `Stream.either`→`result`,
-`catchAll`→`catch`, `catchAllCause`→`catchCause`, `repeatEffect`→`fromEffectRepeat`,
-`Stream.async`→`callback`, `Chunk` mostly replaced by arrays.
+Typechecking establishes static compatibility under TypeScript's assumptions;
+Schema tests establish specific boundary rules; property tests establish tested
+laws over generated samples; differential/host tests compare observed behavior.
+None proves arbitrary program equivalence or remote exactly-once execution.
 
-### Schema (largest change; see schema reference)
-| v3 | v4 |
-|---|---|
-| `Schema.Union(A, B)` | `Schema.Union([A, B])` |
-| `Schema.Literal("a", "b")` | `Schema.Literals(["a", "b"])` (`Literal` takes one) |
-| `Schema.Record({ key, value })` | `Schema.Record(key, value)` |
-| `Schema.Struct({ a: Schema.optional(X) })` | `Schema.optionalKey(X)` (key may be absent) or `Schema.optional(X)` (absent or undefined) |
-| `.pipe(Schema.filter(pred))`, `Schema.int()`, `positive()`, `pattern(re)`, `minLength(n)` | `.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isPattern(re), Schema.isMinLength(n))`; custom: `Schema.check(Schema.makeFilter(pred, { message }))` |
-| `Schema.transform(from, to, { decode, encode })` | `from.pipe(Schema.decodeTo(to, SchemaTransformation.transform({ decode, encode })))` or `SchemaGetter` |
-| `Schema.decodeUnknown(S)` (effect) / `decodeUnknownSync` / `validate*` | `Schema.decodeUnknownEffect(S)` / `decodeUnknownSync` / `decodeUnknownOption` / `decodeUnknownResult`; validate removed (use `Schema.is`, `Schema.asserts(S, input)`) |
-| `Schema.annotations({...})` | `.annotate({...})` |
-| `Schema.DateFromSelf` etc | `Schema.Date` (all `*FromSelf` drop suffix); `Schema.DateTimeUtcFromString` |
-| `Schema.TaggedError<E>()("Tag", fields)` | same shape; third arg annotations e.g. `{ httpApiStatus: 404 }`; `Schema.Error` for untagged |
-| `Schema.Class<A>("Id")({...})` | same; construct with `new A({...})`, `A.make`, `A.makeEffect` |
-| `Schema.Schema.Type<typeof S>` | `typeof S.Type`, `typeof S.Encoded` |
-| `Schema.parseJson(S)` | `Schema.fromJsonString(S)` |
-| `Schema.Redacted(S)` | expects `Redacted` values; `Schema.RedactedFromValue` for old behaviour |
-| `Schema.asSchema` / `typeSchema` / `encodedSchema` | `revealCodec` / `toType` / `toEncoded` |
-| `Schema.equivalence/arbitrary/pretty/standardSchemaV1` | `toEquivalence/toArbitrary/toFormatter/toStandardSchemaV1` |
-| `ParseResult.ParseError` | `Schema.SchemaError` with `.issue` (`SchemaIssue`); format with `SchemaIssue.makeFormatterDefault()` |
+For concurrency, use barriers/Deferred and assert order/counts/release rather
+than sleeping real time. For mutation/durability, inject failures around remote
+success, local commit/journal and acknowledgement; assert duplicate protection
+and reconciliation. For a formal requirement, state the transition-system model,
+invariants, environment assumptions and proof/model-checking result separately.
 
-### CLI
-`Options.*`→`Flag.*`, `Args.*`→`Argument.*`, `Command.make(name, config, handler)` unchanged,
-`Command.run(cmd, { name, version })`→`Command.run({ version })` (name from `make`),
-`Options.withSchema`→`Flag.withSchema`, parent flags via `Command.withSharedFlags` and `yield* parentCommand`.
-
-### HTTP
-`HttpApiEndpoint.get("name")\`/path\`.setPayload(S).addSuccess(S).addError(E)` →
-`HttpApiEndpoint.get("name", "/path", { params, query, payload, headers, success, error })`;
-`HttpApiBuilder.api` → `HttpApiBuilder.layer(Api, { openapiPath })`;
-`HttpApiBuilder.serve` → `HttpRouter.serve(routes)`; `HttpApiBuilder.middlewareCors` → `HttpRouter.cors`;
-`HttpApiMiddleware.Tag` → `HttpApiMiddleware.Service`; `HttpApiSchema.annotations({ status })` → `{ httpApiStatus }` on the error class or `HttpApiSchema.status(404)`.
-
-## Migration procedure (v3 project)
-
-1. Bump every `effect` and `@effect/*` dependency to the same `4.0.0-rc.N`.
-   Remove packages that merged into `effect`.
-2. Run `bunx tsc --noEmit`; fix imports first (table above), then services, then
-   Schema, then combinators. Expect Schema to be most of the work.
-3. Replace `Effect.Service` classes: keep the class, change to `Context.Service`,
-   move `dependencies` into `static layer = Layer.effect(this, make).pipe(Layer.provide(...))`,
-   rename `.Default` usages to `.layer`.
-4. Search for `yield*` on `Ref`, `Deferred`, `Fiber` values and wrap them.
-5. Re-run tests; `TestClock` moved to `effect/testing`; `@effect/vitest` at the
-   same rc if used.
+Deliver the changed code, green relevant checks, remaining seams, deliberate
+behavior changes, compatibility/migration notes and concrete unverified risks.
+Do not claim a complete migration while the agreed scope still has unexplained
+parallel Promise/runtime/error/retry machinery.

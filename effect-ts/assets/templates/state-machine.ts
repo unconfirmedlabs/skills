@@ -1,8 +1,13 @@
 // A typed state machine held in a SubscriptionRef. Transitions are pure
 // functions that return the next state or a typed error; the service is the
-// only writer, so every change is observable, loggable, and replayable.
-import { BunRuntime } from "@effect/platform-bun"
-import { Context, Effect, Layer, Schema, Stream, SubscriptionRef } from "effect"
+// only writer. This example is in-memory and does not implement crash recovery.
+import * as BunRuntime from "@effect/platform-bun/BunRuntime"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import * as SubscriptionRef from "effect/SubscriptionRef"
 
 // --- State: a tagged union with match/guards derived from the schema ---------
 const Idle = Schema.TaggedStruct("Idle", {})

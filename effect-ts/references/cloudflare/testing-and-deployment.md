@@ -1,5 +1,7 @@
 # Testing and deployment
 
+Requires: [testing and observability](../testing-and-observability.md), [runtime and build](runtime-and-build.md).
+
 ## Test layers
 
 Use both layers of testing:

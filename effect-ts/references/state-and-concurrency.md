@@ -1,5 +1,7 @@
 # State, fibers, coordination, state machines
 
+Requires: [core](core.md), [services](services.md).
+
 ## Fibers
 
 ```ts
@@ -41,8 +43,8 @@ Interruption: `Effect.interrupt`, `Effect.onInterrupt(effect, cleanup)`,
 | Observable value | `SubscriptionRef`; `SubscriptionRef.changes(ref)` is a Stream (current value first) |
 | Hot-swappable resource | `ScopedRef.fromAcquire(acquire)`; `ScopedRef.set(ref, acquireNext)` releases the old |
 | One-shot signal | `Deferred.make<A, E>()`; `Deferred.succeed/fail/await/poll/complete(effect)` |
-| Gate | `Latch.make(open)`; `latch.await`, `Latch.open/close/release` |
-| Limit concurrency | `Semaphore.make(n)`; `Semaphore.withPermits(sem, k)(effect)`, `withPermitsIfAvailable`, `resize`; `PartitionedSemaphore` per key |
+| Gate | `Latch.make(open)`; `Latch.await(latch)`, `Latch.open/close/release` |
+| Limit concurrency | `Semaphore.make(n)`; `Semaphore.withPermits(sem, k)(effect)`, `withPermitsIfAvailable`, `resize`; `PartitionedSemaphore` for fairness across keys in one shared permit pool |
 | Work queue | `Queue.bounded<A, Cause.Done>(n)` / `unbounded` / `sliding` / `dropping`; `offer/offerAll/take/takeAll/takeN/takeBetween/poll`; `Queue.end` (needs `Cause.Done` in E), `Queue.fail(e)`, `Queue.shutdown`; `Stream.fromQueue(q)` |
 | Fan-out events | `PubSub.bounded<A>({ capacity, replay })`; `publish/publishAll`; `Stream.fromPubSub(ps)`; `PubSub.subscribe` (scoped) |
 | Atomic multi-value transactions | `TxRef`, `TxQueue`, `TxHashMap`, `TxSemaphore`, `TxReentrantLock` inside `Effect.tx(...)`; `Effect.txRetry` blocks until a read value changes |
@@ -71,8 +73,8 @@ Effect.atomic / STM module / `Effect.withConcurrency` do not exist in v4;
 
 ## State machines (the agent-workflow pattern)
 
-Goal: every state change is a typed, validated, observable transition; no
-partial states; replayable from events. Full runnable example in
+Goal: in-memory state changes follow explicit typed transitions. Observable
+transitions alone do not provide a durable event journal or replay guarantee. Full runnable example in
 `assets/templates/state-machine.ts`.
 
 1. **States and events as schemas.** `Schema.TaggedStruct("Running", {...})`,
@@ -88,9 +90,9 @@ partial states; replayable from events. Full runnable example in
 4. **Effects on transition** run after the state is committed and are
    themselves Effects with typed errors; if they fail, dispatch a failure event
    rather than mutating state ad hoc.
-5. **Observe** with `SubscriptionRef.changes(ref)` (Stream) for UIs, logs,
-   metrics; **persist** the state document with `KeyValueStore.toSchemaStore`
-   or SQL after each transition when the process may restart.
+5. **Observe** with `SubscriptionRef.changes(ref)` for UIs/logs. For persistence,
+   make a durable record the authority; atomically commit state/event/outbox where
+   needed. Updating memory then writing storage has a crash window.
 6. **Expose** transitions as CLI subcommands (`agent start`, `agent step`,
    `agent status --json`) or RPC methods; each command decodes an event, calls
    `dispatch`, and prints the new state. Exit non-zero on `InvalidTransition`.
@@ -115,3 +117,28 @@ Effect.ensuring(effect, finalizer); Effect.onExit(effect, (exit) => ...); Effect
 Layers own scopes: resources acquired in `Layer.effect` live until the layer
 is torn down (`Layer.launch` or runtime dispose). `fs.open`, `spawner.spawn`,
 `PubSub.subscribe`, `makeTempDirectoryScoped` all require a Scope.
+
+## Replay, cancellation and delivery invariants
+
+`Effect.tx` may rerun its body on conflicts or `txRetry`. Only transactional
+state participates in rollback. Keep the body replay-safe: no network I/O,
+ordinary Ref mutation, logging with correctness-sensitive counts, or external
+side effects assumed to roll back. Read transactional state, compute, write
+transactional state; perform external work under an explicit commit/outbox or
+reconciliation protocol. This is not a database or distributed transaction.
+
+Default fan-out failure can interrupt siblings; result-collecting modes deliberately
+change that behavior. Choose `race` (first success) versus `raceFirst` (first exit)
+from the contract. Child lifetime and failure propagation are separate concerns:
+join/observe critical children; a fork by itself does not prove the parent
+reports their failure. Detached fibers require an explicit owner and shutdown.
+
+Queue supplies work sharing; PubSub broadcasts to each subscriber. Bounded,
+dropping and sliding policies trade backpressure for data loss differently.
+Choose completion, failure, draining and shutdown policy deliberately. Test a
+blocked producer, early consumer exit and cancellation, not only an empty queue.
+
+State+side effects need a protocol: a committed transition followed by failed
+notification is not atomic. Define durable pending/completed states, idempotent
+effects and recovery; use an outbox when state and delivery must agree. Ref and
+SubscriptionRef are local state, not crash recovery mechanisms.

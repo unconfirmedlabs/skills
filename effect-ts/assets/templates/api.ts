@@ -1,9 +1,20 @@
 // HTTP API entrypoint: schema-first endpoints, OpenAPI docs, Bun server.
 // Run: bun run api.ts  →  http://localhost:3000/docs
-import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Context, Effect, Layer, Ref, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, HttpApiScalar, HttpApiSchema } from "effect/unstable/httpapi"
+import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
+import * as BunRuntime from "@effect/platform-bun/BunRuntime"
+import * as Context from "effect/Context"
+import * as Config from "effect/Config"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Ref from "effect/Ref"
+import * as Schema from "effect/Schema"
+import * as HttpRouter from "effect/unstable/http/HttpRouter"
+import * as HttpApi from "effect/unstable/httpapi/HttpApi"
+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder"
+import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint"
+import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup"
+import * as HttpApiScalar from "effect/unstable/httpapi/HttpApiScalar"
+import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema"
 
 // --- Domain ------------------------------------------------------------------
 const TodoId = Schema.Int.pipe(Schema.brand("TodoId"))
@@ -84,7 +95,7 @@ const ApiLayer = HttpApiBuilder.layer(Api, { openapiPath: "/openapi.json" }).pip
 const Routes = Layer.mergeAll(ApiLayer, HttpApiScalar.layer(Api, { path: "/docs" }))
 
 const Server = HttpRouter.serve(Routes).pipe(
-  Layer.provide(BunHttpServer.layer({ port: 3000 }))
+  Layer.provide(BunHttpServer.layerConfig({ port: Config.Port("PORT").pipe(Config.withDefault(3000)) }))
 )
 
 BunRuntime.runMain(Layer.launch(Server))

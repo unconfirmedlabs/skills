@@ -1,3 +1,4 @@
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import {
@@ -18,7 +19,7 @@ const dispatch = Effect.fn("worker.dispatch")(function*(
 ) {
   const context = yield* contextFromBindings(bindings)
   const response = yield* Effect.tryPromise({
-    try: () => webHandler(request, context),
+    try: (signal) => webHandler(new Request(request, { signal }), context),
     catch: (cause) => new DispatchFailure({ cause })
   })
   return normalizeRouterResponse(request, response)
@@ -37,13 +38,14 @@ export function handleRequest(
         )
       ),
       Effect.catchCause((cause) =>
-        Effect.logError("Unhandled Worker defect", cause).pipe(
+        Cause.hasInterrupts(cause) ? Effect.failCause(cause) : Effect.logError("Unhandled Worker defect", cause).pipe(
           Effect.as(internalErrorResponseFor(request))
         )
       ),
       Effect.annotateLogs({ method: request.method, pathname: url.pathname }),
       Effect.withLogSpan("worker.request")
-    )
+    ),
+    { signal: request.signal }
   )
 }
 

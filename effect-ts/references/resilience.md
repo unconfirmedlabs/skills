@@ -1,5 +1,8 @@
 # Resilience: retries, timeouts, fallbacks, rate limits, caching
 
+Requires: [core](core.md), [services](services.md). Snippets are API sketches;
+verify exact overloads against the target version.
+
 ## Schedules
 
 A `Schedule<Output, Input, Error, Env>` decides whether and when to recur.
@@ -9,7 +12,7 @@ Schedule.recurs(5)                          // n additional times
 Schedule.spaced("1 second")                 // fixed gap after each run
 Schedule.fixed("1 second")                  // fixed interval regardless of run time
 Schedule.exponential("100 millis", 2)       // base * factor^n
-Schedule.fibonacci("100 millis"); Schedule.forever; Schedule.once; Schedule.cron("*/5 * * * *"); Schedule.during("1 minute")
+Schedule.fibonacci("100 millis"); Schedule.forever; Schedule.recurs(1); Schedule.cron("*/5 * * * *"); Schedule.during("1 minute")
 schedule.pipe(Schedule.jittered)            // randomize delays
 Schedule.max([Schedule.exponential("250 millis"), Schedule.recurs(6)])   // continue while ALL continue, slowest delay = backoff with attempt cap
 Schedule.min([Schedule.exponential("250 millis"), Schedule.spaced("10 seconds")])  // fastest delay = backoff capped at 10s
@@ -57,8 +60,11 @@ Effect.orElseSucceed(() => defaultValue)
 Effect.firstSuccessOf([primary, secondary])              // sequential fallback chain
 ```
 
-Always pass the `AbortSignal` from `Effect.tryPromise((signal) => ...)` so a
-timeout cancels the underlying request.
+Forward the `AbortSignal` from `Effect.tryPromise` to foreign APIs that support
+it. Timeout interrupts the Effect; remote cancellation is conditional on the API
+honoring that signal. Uninterruptible work/finalizers can outlast the deadline.
+An inner timeout bounds each attempt; an outer timeout bounds the retry sequence.
+Do not race writes unless duplicate execution is covered by the contract.
 
 ## Execution plans (ordered fallbacks across providers or configs)
 
@@ -68,11 +74,11 @@ const plan = ExecutionPlan.make(
   { provide: AnthropicLanguageModel.model("claude-opus-4-6"), attempts: 2, while: (e) => e._tag !== "Fatal" }
 )
 effect.pipe(Effect.withExecutionPlan(plan, { onEvent: (ev) => Effect.log(ev._tag, { step: ev.stepIndex }) }))
-const planLayer = yield* plan.captureRequirements    // move step requirements into a Layer's R
+const capturedPlan = yield* plan.captureRequirements // captures step requirements; still an ExecutionPlan
 ```
 
-Each step provides a `Layer` or `Context`, retries `attempts` times with its
-`schedule`, then falls through. Events: `AttemptStart | AttemptSuccess | AttemptFailure`.
+Each step provides a `Layer` or `Context`, runs at most `attempts` TOTAL attempts
+with its `schedule`, then falls through. Events: `AttemptStart | AttemptSuccess | AttemptFailure`.
 Use for LLM provider fallback, primary/replica databases, regional endpoints.
 
 ## Rate limiting and concurrency limits
@@ -92,7 +98,7 @@ HttpClient.withRateLimiter(client, { limiter, window: "1 minute", limit: 100 }) 
 ```ts
 const cached = yield* Effect.cached(expensive)                  // Effect<Effect<A>>: first run memoized forever
 const cached = yield* Effect.cachedWithTTL(expensive, "1 hour")
-const { get, invalidate } = yield* Effect.cachedInvalidateWithTTL(expensive, "1 hour")
+const [get, invalidate] = yield* Effect.cachedInvalidateWithTTL(expensive, "1 hour")
 
 const cache = yield* Cache.make<Key, A, E>({ capacity: 1000, timeToLive: "10 minutes", lookup: (key) => fetch(key) })
 yield* Cache.get(cache, key)            // concurrent misses share one lookup; failures cached until TTL
@@ -105,10 +111,10 @@ PersistedCache (effect/unstable/persistence)   // Schema-keyed cache backed by K
 
 ## Circuit breaking and health
 
-No built-in circuit breaker in v4 core. Compose one: a `Ref<{ state, openedAt }>`
-checked before the call, `Effect.tapError` to count failures, `Effect.fail(new
-CircuitOpen())` while open, and a `Schedule` for the half-open probe. Expose it
-as a service so tests can drive it with `TestClock`.
+If the target version has no circuit-breaker abstraction, compose a service with
+atomic closed/open/half-open transitions, a bounded probe permit and Clock-driven
+reset policy. A check-then-update Ref sketch is insufficient under concurrency;
+test simultaneous failures and probes before claiming a working breaker.
 
 ## Checklist
 
@@ -117,3 +123,23 @@ as a service so tests can drive it with `TestClock`.
 - Bound concurrency on fan-out; bound queues; bound caches (`capacity`).
 - Prefer `Schedule.jittered`; cap total time with `Schedule.upTo({ duration })` or an outer timeout.
 - Make time observable: `TestClock.adjust` must be able to drive every schedule you write.
+
+## Cache and batching ownership
+
+Cache lookup failures can be cached as well as values; use success/failure-specific
+TTL and invalidation. Include tenant, identity, configuration and representation
+dimensions in keys, or construct a cache at that narrower lifetime.
+`Cache.makeWith` can choose whether lookup requirements are captured at
+construction or supplied at lookup (`requireServicesAt`); inspect this option
+before sharing a cache across requests.
+
+`RequestResolver` batches requests and can deduplicate reads. `withCache` has
+capacity but no TTL; it caches completed failures too (interrupted exits are
+excluded). Use explicit invalidation or the resolver's `asCache` TTL controls
+for changing data. Batching must preserve one completion per request and handle
+missing/duplicate responses. Never share authenticated results on an incomplete key.
+
+In-memory Semaphore and RateLimiter implementations coordinate only one process.
+Distributed rate limits need a shared store and its failure policy. A
+PartitionedSemaphore is a shared permit pool with fairness across partitions,
+not a separate independent lock per key.

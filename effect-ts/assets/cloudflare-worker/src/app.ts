@@ -1,3 +1,4 @@
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as HttpRouter from "effect/unstable/http/HttpRouter"
@@ -71,7 +72,7 @@ const routeHandler =
       Effect.catchTag("HttpFailure", (failure) => Effect.succeed(errorResponse(failure))),
       Effect.map(fromWebResponse),
       Effect.catchCause((cause) =>
-        Effect.logError("Unhandled route defect", cause).pipe(
+        Cause.hasInterrupts(cause) ? Effect.failCause(cause) : Effect.logError("Unhandled route defect", cause).pipe(
           Effect.as(fromWebResponse(internalErrorResponse()))
         )
       ),

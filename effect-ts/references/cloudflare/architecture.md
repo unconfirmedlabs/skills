@@ -1,5 +1,7 @@
 # Worker architecture
 
+Requires: [services](../services.md), [HTTP](../http.md).
+
 ## Boundary shape
 
 Keep the dependency direction one-way:
@@ -27,16 +29,16 @@ const dispatch = Effect.fn("worker.dispatch")(
     Effect.tryPromise({
       try: (signal) => {
         if (signal.aborted) return Promise.reject(signal.reason)
-        return handler(request, context)
+        return handler(new Request(request, { signal: AbortSignal.any([request.signal, signal]) }), context)
       },
       catch: (cause) => new DispatchFailure({ cause })
     })
 )
 ```
 
-`HttpRouter.toWebHandler` builds the router layer at module initialization. That
-is appropriate when construction is immutable and performs no binding-backed
-I/O. Pass invocation-specific services in its Context argument.
+`HttpRouter.toWebHandler` creates a cached adapter whose layer construction is
+lazy on first use. Sharing it is appropriate when the built graph is immutable
+and performs no invocation-bound I/O. Pass invocation-specific services in its Context argument.
 
 ## Request-scoped services
 
@@ -83,23 +85,39 @@ the response:
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 
 const fromWebResponse = (response: Response) =>
-  HttpServerResponse.raw(response, {
+  HttpServerResponse.raw(new Response(response.body, {
+    status: response.status, statusText: response.statusText, headers: response.headers
+  }), {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers
   })
 ```
 
-This preserves a native Response and its streaming body. Supplying outer
-metadata is important: Effect can remove the body for HEAD without losing the
-original status or headers. Verify this behavior on every Effect upgrade.
+For ordinary HTTP responses, the new Response gives mutable owned headers:
+raw-to-Web conversion may mutate headers, and a fetch/redirect Response can have
+immutable headers. Handle WebSocket upgrade responses separately using the host
+adapter; this generic reconstruction does not preserve upgrade-specific fields.
+
+This preserves response metadata and its streaming body when the native body
+already owns its lifetime (e.g. a host-provided R2 body). Supplying outer metadata
+lets Effect remove the body for HEAD while retaining status/headers.
+
+It does **not** transfer a request Scope into a raw Response. In rc.115
+`HttpEffect.scopeTransferToStream` transfers ownership only for an Effect Stream
+body. If the body depends on an Effect-scoped connection/resource, use
+`HttpServerResponse.stream(effectStream)` with acquisition inside that lifetime,
+or implement an explicit native stream owner that finalizes on end/error/cancel.
+Test consumption after the handler resolves and early cancellation. Merely
+preserving bytes/headers is not proof that the source stays alive.
 
 ## Error interpretation
 
 Expected domain and infrastructure errors stay typed until the HTTP boundary.
 Map them to stable public codes and safe messages. Log infrastructure details
-inside Effect, not in the response. Add a final `Effect.catchCause` for defects
-and return one generic 500 response with `Cache-Control: no-store`.
+inside Effect, not in the response. Use catchDefect for defect-only recovery or
+inspect Cause in catchCause: re-fail causes containing interruption before
+rendering a generic no-store 500. Do not turn client cancellation into success.
 
 Use distinct failures for binding operations so logs retain the operation and a
 safe identifier:
@@ -133,4 +151,12 @@ public provenance headers. Public source labels should describe behavior such as
 
 Sources: [Effect importing guidance](https://effect.website/docs/v4/getting-started/importing-effect/),
 [Cloudflare Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/),
-[Effect HttpRouter API](https://effect-ts.github.io/effect/effect/unstable/http/HttpRouter.ts.html).
+[Effect HttpRouter API](https://github.com/Effect-TS/effect/blob/4a05d4914fa2327a42bd75fe77c22c188becf3b4/packages/effect/src/unstable/http/HttpRouter.ts).
+
+## Binding-specific storage semantics
+
+D1Client supports atomic fixed batches, not SqlClient.withTransaction or query
+streaming in rc.115. Durable Object SQLite supports transactions with the full
+storage object, not only storage.sql, and rejects nested transactions. See
+[SQL and persistence](../sql-and-persistence.md). Effect Workflow and Cloudflare
+Workflows are different engines: choose which owns replay and step identity.
