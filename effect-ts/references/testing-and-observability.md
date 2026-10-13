@@ -90,8 +90,13 @@ client-side middleware layer (`HttpApiMiddleware.layerClient(Authorization, ...)
 ### If the project uses vitest
 
 `@effect/vitest` (same version as effect; peers `vitest >=5 <6`) provides `it.effect` (TestClock + TestConsole
-provided), `it.live` (real services), `it.scoped`, `it.effect.prop(name, [Schema], fn)`,
-and `layer(L)("name", (it) => ...)` for one shared layer per block.
+provided), `it.live` (real services), `it.effect.prop(name, [Schema], fn)`,
+`it.effect.each(cases)(name, (c, ctx) => ...)`, `it.flakyTest`, and
+`layer(L)("name", (it) => ...)` for one shared layer per block. Both `it.effect`
+and `it.live` provide a Scope closed when the test ends, so v3 `it.scoped` /
+`it.scopedLive` (absent from @effect/vitest rc.115 and 4.0.3) become `it.effect` /
+`it.live`. In 4.0.x `it.scoped` is Vitest's own fixture override
+(`it.scoped(fixtures)`), not an Effect test; `it.scoped(name, effect)` fails to compile.
 
 ## Logging
 

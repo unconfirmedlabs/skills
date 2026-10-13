@@ -107,6 +107,7 @@ not directly yieldable in `Effect.gen` despite old migration notes saying otherw
 | CLI Options/Args and earlier v4 constructors | Flag/Argument; 4.0.3 uses String/Boolean/Int/Finite/Literals; Prompt.String/Select/Confirm; verify argv and exit behavior |
 | HttpApi builder and endpoint syntax | v4 options/schema APIs; recheck middleware, errors, HEAD, streaming and clients |
 | Equality/hash and collection keys | v4 equality semantics differ; test caches/dedup/maps with real key values |
+| `@effect/vitest` `it.scoped` / `it.scopedLive` | `it.effect` / `it.live`, which provide and close a Scope; `it.scoped` is now Vitest's fixture API |
 
 Do not mechanically upgrade every `@effect/*` dependency to one version: inspect
 peer requirements, independently versioned tooling and obsolete merged packages.
