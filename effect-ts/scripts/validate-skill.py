@@ -70,7 +70,7 @@ if len(modules) != metadata['modules'] or sum(len(m['symbols']) for m in modules
 for m in modules:
     if not (refs / m['guide']).is_file():
         errors.append(f"{m['module']}: missing guide {m['guide']}")
-    if '/internal/' in m['module'] or not m['symbols']:
+    if '/internal/' in m['module'] or (not m['symbols'] and not m.get('sideEffect')):
         errors.append(f"Invalid/empty public module: {m['module']}")
     if len({s['name'] for s in m['symbols']}) != len(m['symbols']):
         errors.append(f"Duplicate exported names: {m['module']}")
