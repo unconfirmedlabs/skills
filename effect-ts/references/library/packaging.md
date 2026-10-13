@@ -15,9 +15,12 @@ incompatible versions/protocols, class identities and lifecycle behavior are the
 real compatibility risks. SDK peers depend on whether sharing its identity and
 version is part of the public contract, not a universal rule for every SDK.
 
-A prerelease peer range must cover versions actually tested. An exact peer or
+A peer range, especially a prerelease one, must cover versions actually tested. An exact peer or
 explicit union of tested prereleases is honest when that is the evidence; never
-advertise a broad future `<4.1` range without support. Respect workspace version
+advertise a broad future `<4.1` range without support. From 4.0.0 on,
+`@stability stable` APIs follow semver, but `@stability unstable` modules (e.g.
+`effect/http`, `effect/sql`, `effect/cli`) may break in minor releases: cap a peer
+that relies on them below the next untested minor. Respect workspace version
 policy. Most runtime/provider adapters track the Effect release train, but
 language tooling and other packages may version independently; inspect peers.
 

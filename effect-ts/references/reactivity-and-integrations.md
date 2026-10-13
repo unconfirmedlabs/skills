@@ -5,7 +5,7 @@ Requires: [services](services.md), [state/concurrency](state-and-concurrency.md)
 
 ## Reactive state
 
-`effect/unstable/reactivity/Atom` describes values, derived values, effect-backed
+`effect/reactivity/Atom` describes values, derived values, effect-backed
 queries, streams and writable state. `AtomRegistry` owns cached values, dependency
 tracking, running effects and cleanup. Use `AsyncResult` for initial/loading/
 success/failure/refresh state, `AtomRef` for observable references, and
@@ -29,8 +29,9 @@ storage adapters only when persistence/security semantics fit the application.
 
 ## Sockets and networking
 
-`effect/unstable/socket` provides scoped socket construction and reader/writer
-operations, WebSocket adapters and socket-server capabilities. In rc.115 even a
+`effect/socket` provides scoped socket construction and reader/writer
+operations, WebSocket adapters, socket-server capabilities and UDP
+`DatagramSocket` (4.0.3). In 4.0.3 even a
 clean close is represented through SocketError; classify close reasons rather
 than treating every close as a defect. Retry around a scoped connection/consume
 loop, and decide which messages can replay after reconnection. Do not use old
@@ -41,13 +42,14 @@ messages, and typed schemas for decoded payloads. Test half-close, reconnect,
 malformed frames, early consumer cancellation and pending writes at shutdown.
 HTTP upgrades/Cloudflare WebSocket hibernation still follow the host's lifecycle.
 
-`effect/unstable/net/{NetAddress,IpInterface,IpNetwork}` models/parses addresses and
-subnets. Use for typed network configuration, containment and routing decisions;
+`effect/net/{NetAddress,IpInterface,IpNetwork}` models/parses addresses and
+subnets; experimental `Host`, `Dns` and `AddressResolver` (4.0.3) parse hosts and
+resolve names through platform services (Node/Bun/Deno). Use for typed network configuration, containment and routing decisions;
 validation alone does not protect against DNS rebinding or supply a connection.
 
 ## Local worker transports
 
-`effect/unstable/workers` and platform worker adapters provide background worker
+`effect/workers` and platform worker adapters provide background worker
 management, runners, pools, typed messages and transferable values. Use for CPU
 isolation or existing worker protocols. Choose worker count, request queue limits,
 serialization, cancellation and shutdown. A transfer can detach an ArrayBuffer;

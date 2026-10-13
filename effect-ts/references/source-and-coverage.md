@@ -4,13 +4,16 @@ Requires: none. This is also the maintainer entrypoint.
 
 ## Evidence baseline and scope
 
-This revision targets `effect@4.0.0-rc.115`, source commit
-`4a05d4914fa2327a42bd75fe77c22c188becf3b4`, reviewed 2026-09-12.
+This revision targets `effect@4.0.3` (stable), source commit
+`967a7dc5963a23d3705259d60ccac1ce9f060a3b` (tag `effect@4.0.3`), reviewed 2026-10-13.
 The official onboarding is [Welcome to Effect](https://effect.website/docs/v4/onboarding),
 with [guides](https://effect.website/docs/v4/getting-started) and a
 [versioned API reference](https://effect.website/docs/v4/api).
-The canonical source is [Effect-TS/effect](https://github.com/Effect-TS/effect).
-Do not use the archived effect-smol checkout or the v3 branch for v4 APIs.
+The canonical source, release tags (`effect@4.0.x`) and per-package
+`CHANGELOG.md` files are in [Effect-TS/effect](https://github.com/Effect-TS/effect);
+its `MIGRATION.md` covers v3 to v4 and the stability policy. Effect-TS/effect-smol
+hosted early v4 development and no longer tracks releases; do not use it or the
+`v3` branch for v4 APIs.
 
 The skill has two complementary levels of coverage:
 
@@ -18,9 +21,11 @@ The skill has two complementary levels of coverage:
   correctness/lifecycle constraints that declarations alone do not establish.
 - The [complete generated module map](generated/modules.md) and
   [searchable export inventory](generated/api-index.jsonl) enumerate public source
-  package exports, including aliases, types, namespace exports and unstable
-  families. Each export has available upstream summary/use cues, category and
-  source location. This makes every feature discoverable without copying its
+  package exports, including aliases, types and namespace exports. Each module
+  records its declared `@stability` (stable, unstable or experimental); each
+  export has available upstream summary/use cues, category and source location.
+  Side-effect-only entrypoints (e.g. `effect/schema/SchemaJITCompiler/enable`)
+  are listed with no exports. This makes every feature discoverable without copying its
   implementation or loading a manual into the agent's context.
 
 The inventory covers non-private packages with TypeScript source/export maps in
@@ -51,7 +56,8 @@ from an index summary. Search in ignored dependencies explicitly with `rg --no-i
 ## Match source to the target
 
 1. Read `package.json`, lockfile and installed `effect/package.json`; note
-   runtime, adapter versions and unstable imports.
+   runtime, adapter versions and imports of `@stability unstable` modules
+   (and any pre-4.0 `effect/unstable/*` paths still in the code).
 2. Inspect `node_modules/effect/src`, `dist/*.d.ts`, `ai-docs` and any installed
    AGENTS/LLMS documentation. The source checkout includes `LLMS.md`, `ai-docs/`,
    `packages/effect/test/`, type tests, and `migration/` guides/annotations.
@@ -59,13 +65,13 @@ from an index summary. Search in ignored dependencies explicitly with `rg --no-i
    directory. Example for this baseline:
 
    ```sh
-   git clone --depth 1 --branch effect@4.0.0-rc.115 https://github.com/Effect-TS/effect.git /tmp/effect-v4-source
+   git clone --depth 1 --branch effect@4.0.3 https://github.com/Effect-TS/effect.git /tmp/effect-v4-source
    git -C /tmp/effect-v4-source rev-parse HEAD
    ```
 
    Reuse a matching checkout. Do not vendor megabytes into the user's project
    unless they want it maintained there. A checkout of current main can differ
-   from an installed prerelease.
+   from the installed release; check out the tag matching the lockfile.
 4. Compile against the target's installed package and run a focused semantic
    probe for uncertain behavior. v3 rename tables are leads, not a migration proof.
 
@@ -119,10 +125,13 @@ its transaction-retry example intentionally demonstrates an unsafe external
 mutation so the guide's replay warning is executable. It is not a production
 transaction recipe. The fixtures do not cover every indexed API.
 
-Baseline validation on 2026-09-12: all eight starters compiled; 11 semantic tests
-and 14 workerd tests passed; CLI/script/API/Node/bridge/shutdown checks and the
-minified Wrangler dry run passed. The source inventory regenerated identically.
-An independent Astra xhigh review and isolated library-to-Worker consumer trial
-checked dependency routing, tenant isolation, cancellation and streamed-resource
-ownership. Database/provider/network integrations and all 12,300 indexed exports
-were not individually executed; use the task-specific verification modules.
+Baseline validation for 4.0.3 on 2026-10-13: all eight starters compiled; 11
+semantic tests and 14 workerd tests passed; CLI/script/API/Node/bridge/shutdown
+checks and the minified Wrangler dry run passed. The source inventory regenerated
+identically. Reference snippets for core, services, Schema, resilience,
+concurrency, streams, HTTP, CLI, testing and Cloudflare were compiled against
+4.0.3 with placeholder stubs. React Native/Hermes guidance comes from source
+reading and a Node probe with globals removed, not from a device run. The rc.115
+review (independent Astra xhigh review and library-to-Worker consumer trial) was
+not repeated. Database/provider/network integrations and all 12,792 indexed
+exports were not individually executed; use the task-specific verification modules.

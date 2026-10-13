@@ -14,7 +14,7 @@ Stream.make(1, 2, 3); Stream.fromIterable(xs); Stream.fromArray(arr); Stream.ran
 Stream.fromEffect(eff); Stream.fromEffectRepeat(eff); Stream.fromEffectSchedule(eff, Schedule.spaced("30 seconds"))
 Stream.fromQueue(queue); Stream.fromPubSub(pubsub); Stream.fromSchedule(schedule); Stream.tick("1 second")
 Stream.paginate(cursor0, (cursor) => Effect<[items, Option<nextCursor>]>)
-Stream.unfold(seed, (s) => Option<[a, s]>); Stream.iterate(a, f)
+Stream.unfold(seed, (s) => Effect<[a, s] | undefined>); Stream.iterate(a, f)
 Stream.fromAsyncIterable(iter, (cause) => new MyError({ cause })); Stream.fromReadableStream({ evaluate, onError })
 Stream.callback<A, E>((queue) => Effect<unknown, E, Scope>)   // Queue.offerUnsafe(queue, a) from callbacks; acquireRelease for cleanup
 Stream.fromEventListener(target, "click"); Stream.unwrap(Effect<Stream>); Stream.scoped(Effect<A, E, Scope>)
@@ -25,20 +25,20 @@ fs.stream(path); handle.stdout; stdio.stdin; HttpClientResponse.stream(res); req
 
 ```ts
 Stream.map, Stream.filter, Stream.filterMap, Stream.mapEffect(f, { concurrency: 4, unordered?: true }), Stream.flatMap(f, { concurrency })
-Stream.switchMap, Stream.scan(init, f), Stream.mapAccum, Stream.tap, Stream.zipWithIndex
+Stream.switchMap, Stream.scan(() => init, f), Stream.mapAccum, Stream.tap, Stream.zipWithIndex
 Stream.take(n), takeWhile, takeUntil, drop, dropWhile
 Stream.grouped(n), groupedWithin(n, "1 second"), sliding, chunks, rechunk(n), groupByKey
 Stream.buffer({ capacity: 64 }), Stream.buffer({ capacity: 64, strategy: "sliding" | "dropping" })
 Stream.debounce("300 millis"), Stream.throttle({ cost: (chunk) => chunk.length, units: 10, duration: "1 second", strategy: "shape" | "enforce" })
 Stream.merge(a, b), Stream.mergeAll([...], { concurrency }), Stream.concat, Stream.zip, Stream.zipLatest, Stream.race
 Stream.decodeText(), Stream.encodeText, Stream.splitLines
-Stream.pipeThroughChannel(Ndjson.decodeSchema(S)()) / Ndjson.encodeSchema(S)() / Msgpack.*
+Stream.pipeThroughChannel(Ndjson.decodeSchema(S)()) / Ndjson.encodeSchema(S)()   // Ndjson from effect/encoding
 Stream.catchTag / catchTags / catchCause / retry(schedule) / mapError / orDie / ensuring / onEnd / interruptWhen(deferred) / timeout
 Stream.provide(layer), Stream.provideService(...)
 ```
 
 Multicast: `const shared = yield* Stream.broadcast(source, { capacity: 16, replay: 1 })`
-(scoped; every consumer sees every element) or `Stream.share(source, { idleTimeToLive })`.
+(scoped; every consumer sees every element) or `Stream.share(source, { capacity: 16, idleTimeToLive })`.
 
 ## Consume
 
@@ -98,7 +98,7 @@ Use Sink when folding, consuming bounded groups or managing leftovers matters.
 Use Channel/Pull for custom streaming operators and protocols that need control
 over input, output, completion and chunks; prefer Stream composition otherwise.
 `Cause.Done` is stream completion, not a domain failure. `ChannelSchema` validates
-channel boundaries. NDJSON/Msgpack channels frame records; arbitrary byte chunks
+channel boundaries. NDJSON channels frame records; arbitrary byte chunks
 are not guaranteed to align with UTF-8 characters, lines or complete messages.
 
 A concurrency option can preserve output order by buffering; unordered output

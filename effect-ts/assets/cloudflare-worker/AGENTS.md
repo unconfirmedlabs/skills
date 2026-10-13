@@ -1,8 +1,8 @@
 # Effect Cloudflare Worker context
 
-- Use Effect v4 and keep its release candidate pinned exactly.
+- Use Effect v4 (4.0.3) and keep the version pinned exactly.
 - Import namespaces from public module subpaths (`effect/Effect`,
-  `effect/Schema`, `effect/unstable/http/HttpRouter`). Do not use Effect barrel
+  `effect/Schema`, `effect/http/HttpRouter`). Do not use Effect barrel
   imports; Wrangler bundles production code with esbuild.
 - Keep Cloudflare entrypoints thin. `Effect.runPromise` belongs only in
   `src/index.ts`; application and service functions return Effects.

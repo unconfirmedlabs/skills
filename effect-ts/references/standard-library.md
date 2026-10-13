@@ -25,7 +25,7 @@ structures for measured access patterns. Find every operation and its use cue in
 | Instants, zones, calendars and recurrence | `DateTime`, `Cron`; distinguish UTC instant, local civil time, zone rules and interval schedules; test DST boundaries |
 | Random sampling vs security | `Random` for controllable sampling/shuffle, `Crypto` for cryptographic randomness and digests; `Hash` is not an integrity/security hash |
 | Nested immutable updates and wire patches | `Optic`, `Struct`, `JsonPointer`, `JsonPatch`; validate patch paths/operations and handle failed patch preconditions |
-| Encoding and numeric representations | `Encoding`, `JsonSchema`, Schema codecs; base64/hex do not encrypt, encode bytes/bigints explicitly for JSON |
+| Encoding and numeric representations | `effect/encoding` (`Base64`, `Base64Url`, `Hex`, `EncodingError`), `JsonSchema`, Schema codecs; base64/hex do not encrypt, encode bytes/bigints explicitly for JSON |
 | Pure composition and TypeScript utilities | `Function` (`pipe`, `flow`, `dual`), `Types`, `HKT`, `Unify`; use HKT/variance tools for reusable abstractions when inference needs them |
 | Reductions and changes | `Reducer`, `Combiner`, `Differ`; fold structured results or describe composable patches with the required laws |
 | Runtime/interop protocols | `Effectable`, `Runtime`, `Take`, `PrimaryKey`, `StandardSchema`, `Redactable`; advanced interoperability hooks, selected from their current source contracts |
@@ -44,7 +44,8 @@ insertion invalidates lookup assumptions.
 construction/formatting needs no service. TestClock does not turn Random into a
 seeded generator; inject/configure random behavior separately. Cryptographic
 behavior should be tested through an explicit service seam without replacing
-production security randomness with deterministic Random.
+production security randomness with deterministic Random; `TestCrypto.layer(seed)`
+(`effect/testing`) seeds random bytes/UUIDs/ULIDs in tests and keeps the platform digest.
 
 The inventory also routes advanced or newly added utility modules here; inspect
 its module-specific summary before choosing one. Do not invent a missing API from

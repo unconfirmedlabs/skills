@@ -61,6 +61,50 @@ Use it for ambient policy with a safe default (logging, tracing, local options).
 A default in-memory store is inappropriate when the contract requires durability:
 make the durable store a required service so omission is visible.
 
+### Wrapping a Promise SDK as a service
+
+Construct the client in the Layer, map each SDK failure to the service's tagged
+errors in `catch`, forward the `AbortSignal`, decode the untrusted result, and
+keep timeout/retry inside the method so callers see one typed contract. Retry
+reads; retry writes only when idempotent (see [resilience](resilience.md)).
+
+```ts
+class ChainUnavailable extends Schema.TaggedError<ChainUnavailable>()("ChainUnavailable", { cause: Schema.Defect() }) {}
+class ObjectNotFound extends Schema.TaggedError<ObjectNotFound>()("ObjectNotFound", { id: Schema.String }) {}
+const ChainObject = Schema.Struct({ id: Schema.String, version: Schema.String })
+
+class Chain extends Context.Service<Chain, {
+  getObject(id: string): Effect.Effect<typeof ChainObject.Type, ChainUnavailable | ObjectNotFound | Schema.SchemaError>
+}>()("app/Chain") {
+  static readonly layer = Layer.effect(Chain, Effect.gen(function*() {
+    const sdk = makeSdk(yield* Config.String("CHAIN_URL"))          // foreign Promise client
+    const getObject = Effect.fn("Chain.getObject")(function*(id: string) {
+      const raw = yield* Effect.tryPromise({
+        try: (signal) => sdk.getObject({ id, signal }),               // interruption/timeout aborts the request
+        catch: (cause) => isNotFound(cause) ? new ObjectNotFound({ id }) : new ChainUnavailable({ cause })
+      }).pipe(
+        Effect.timeout("5 seconds"),                                  // per attempt
+        Effect.catchTag("TimeoutError", (cause) => Effect.fail(new ChainUnavailable({ cause }))),
+        Effect.retry({ schedule: Schedule.exponential("200 millis").pipe(Schedule.jittered), times: 3,
+          while: (e) => e._tag === "ChainUnavailable" })
+      )
+      return yield* Schema.decodeUnknownEffect(ChainObject)(raw)
+    })
+    return Chain.of({ getObject })
+  }))
+  static readonly layerTest = (objects: ReadonlyArray<typeof ChainObject.Type>) =>
+    Layer.succeed(Chain, Chain.of({
+      getObject: (id) => {
+        const found = objects.find((o) => o.id === id)
+        return found ? Effect.succeed(found) : Effect.fail(new ObjectNotFound({ id }))
+      }
+    }))
+}
+```
+
+The test layer keeps the same key and error types. Effect-level tests provide it
+instead of the live Layer; see [testing](testing-and-observability.md).
+
 ## Resources
 
 Use `Effect.acquireRelease`/`acquireUseRelease` and `Effect.addFinalizer` to couple

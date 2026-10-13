@@ -16,7 +16,7 @@ import { Effect, Schema } from "effect"
 class ParseError extends Schema.TaggedError<ParseError>()("ParseError", { input: Schema.String, cause: Schema.Defect() }) {}
 
 // Effect.gen for blocks; yield* unwraps Effects, Config values, Context.Service keys, and TaggedError instances.
-// Option and Result are NOT yieldable in rc.115: lift with Effect.fromOption(o) / Effect.fromResult(r) / Effect.fromNullishOr(x).
+// Option and Result are NOT yieldable in 4.0.3: lift with Effect.fromOption(o) / Effect.fromResult(r) / Effect.fromNullishOr(x).
 const program = Effect.gen(function*() {
   const cfg = yield* Config.String("NAME")
   const users = yield* Users                              // service
@@ -45,10 +45,10 @@ Constructors: `succeed`, `fail`, `die`, `sync` (throws become defects), `promise
 Many combinators are dual (verify each overload: `Effect.map(eff, f)` or `eff.pipe(Effect.map(f))`):
 `map`, `flatMap`, `andThen(f | effect)`, `tap(f | effect)`, `as(value)`, `asVoid`,
 `zip`, `zipWith`, `all([...] | {...}, { concurrency, discard, mode: "default" | "result" })`,
-`forEach(items, f, { concurrency, discard })`, `partition` (`[failures, successes]`),
+`forEach(items, f, { concurrency, discard })`, `partition` (`[successes, failures]` since 4.0.0),
 `filterOrFail(pred, () => error)`, `when(effect, condition)`, `whileLoop({ while, body, step })`,
 `forever`, `ignore`, `ignoreCause`, `cached`, `cachedWithTTL("1 hour")`,
-`cachedInvalidateWithTTL` (returns `[get, invalidate]`), `firstSuccessOf([...])`.
+`cachedInvalidateWithTTL` (returns `[get, invalidate]`; TTL may be `(exit) => duration`), `firstSuccessOf([...])`.
 `Effect.if`, `Effect.unless`, `Effect.loop`, `Effect.iterate`, `Effect.orElse`,
 `Effect.either`, `Effect.unsandbox` do not exist in v4.
 
@@ -108,7 +108,7 @@ interrupted cause unless the boundary deliberately handles cancellation. `Cause.
 Option.some(1); Option.none(); Option.fromNullishOr(x); Option.getOrElse(o, () => d); Option.getOrUndefined(o)
 Option.map / flatMap / filter / match(o, { onNone, onSome }); Option.isSome(o) narrows; yield* Effect.fromOption(o) fails with NoSuchElementError on None
 Result.succeed(a); Result.fail(e); Result.isSuccess(r); Result.match(r, { onSuccess, onFailure }); Result.getOrElse; Result.merge
-yield* Effect.fromResult(r)   // Failure -> error channel. Neither Option nor Result can be yield*ed directly in rc.115; Effect.result / Effect.option go the other way
+yield* Effect.fromResult(r)   // Failure -> error channel. Neither Option nor Result can be yield*ed directly in 4.0.3; Effect.result / Effect.option go the other way
 
 // Match: exhaustive dispatch on tagged unions / values
 const describe = Match.type<Shape>().pipe(

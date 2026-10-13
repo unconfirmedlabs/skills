@@ -37,7 +37,9 @@ effect.pipe(Effect.repeat({ schedule: Schedule.spaced("30 seconds"), until: (a) 
 Effect.schedule(effect, schedule)          // repeat without the initial run's value
 ```
 
-The effect always runs once before the schedule is consulted. Production
+The effect always runs once before the schedule is consulted. `retry` only
+retries typed failures: since 4.0.2 a cause containing a defect or interruption
+is not retried, so map retryable foreign errors into `E` first. Production
 default for network calls:
 
 ```ts
@@ -87,10 +89,10 @@ Use for LLM provider fallback, primary/replica databases, regional endpoints.
 const sem = yield* Semaphore.make(8); Semaphore.withPermits(sem, 1)(call)                     // in-process concurrency cap
 Effect.forEach(items, f, { concurrency: 8 }); Stream.mapEffect(f, { concurrency: 8 })
 Stream.throttle({ cost: () => 1, units: 10, duration: "1 second", strategy: "shape" })      // stream rate
-// shared limiter across requests/processes (effect/unstable/persistence)
+// shared limiter across requests/processes (effect/persistence)
 const withRateLimiter = yield* RateLimiter.makeWithRateLimiter          // needs RateLimiter.layer + layerStoreMemory | layerStoreRedis
 call.pipe(withRateLimiter({ key: `user:${id}`, limit: 100, window: "1 minute", algorithm: "token-bucket", onExceeded: "delay" | "fail" }))   // fail -> RateLimiterError
-HttpClient.withRateLimiter(client, { limiter, window: "1 minute", limit: 100 })   // also retries 429s through the limiter
+HttpClient.withRateLimiter(client, { limiter, key: (req) => req.url, window: "1 minute", limit: 100 })   // also retries 429s through the limiter
 ```
 
 ## Caching and memoization
@@ -98,7 +100,7 @@ HttpClient.withRateLimiter(client, { limiter, window: "1 minute", limit: 100 }) 
 ```ts
 const cached = yield* Effect.cached(expensive)                  // Effect<Effect<A>>: first run memoized forever
 const cached = yield* Effect.cachedWithTTL(expensive, "1 hour")
-const [get, invalidate] = yield* Effect.cachedInvalidateWithTTL(expensive, "1 hour")
+const [get, invalidate] = yield* Effect.cachedInvalidateWithTTL(expensive, "1 hour")   // or (exit) => Exit.isSuccess(exit) ? "1 hour" : "5 seconds"
 
 const cache = yield* Cache.make<Key, A, E>({ capacity: 1000, timeToLive: "10 minutes", lookup: (key) => fetch(key) })
 yield* Cache.get(cache, key)            // concurrent misses share one lookup; failures cached until TTL
@@ -106,7 +108,7 @@ yield* Cache.invalidate(cache, key); Cache.refresh; Cache.set; Cache.getOption; 
 Cache.makeWith(lookup, { capacity, timeToLive: (exit, key) => Exit.isSuccess(exit) ? "1 hour" : "30 seconds" })
 ScopedCache.make(...)                   // entries own resources released on eviction
 RequestResolver + Request.Class         // batching + dedup of concurrent lookups (see services reference)
-PersistedCache (effect/unstable/persistence)   // Schema-keyed cache backed by KeyValueStore/Redis/SQL
+PersistedCache (effect/persistence)   // Schema-keyed cache backed by KeyValueStore/Redis/SQL
 ```
 
 ## Circuit breaking and health

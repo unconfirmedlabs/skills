@@ -10,11 +10,13 @@ Requires: [HTTP](http.md), [Schema](schema.md), [resilience](resilience.md),
 | Multi-turn conversation | `Prompt`, `Chat`; explicit history/import/export and storage/lifetime |
 | Callable model tools | `Tool`, `Toolkit`; schema parameters/results, handlers, typed failure modes and approval support |
 | Semantic retrieval | `EmbeddingModel`; batch/token limits, vector dimensions and model/version identity |
+| Batched classification / rating / probability | `Decision`, `DecisionModel.decide` over a schema input; provider DecisionModel layers (Cloudflare, OpenRouter, TypeSafe) |
 | Token accounting | `Tokenizer`; provider/model-specific limits, truncation and context budget |
 | Multiple provider/config attempts | `Model`, `ExecutionPlan`; bounded total attempts and cost, classify retriable failures |
 | MCP serving | `McpServer`, MCP schema/serialization modules; expose a chosen tool/resource/prompt contract and transport |
 
-Provider packages include Anthropic, OpenAI, OpenAI-compatible and OpenRouter.
+Provider packages include Anthropic, OpenAI, OpenAI-compatible, OpenRouter,
+Cloudflare and TypeSafe (the last two ship DecisionModel layers, not LanguageModel).
 Read the installed provider's supported model/config types; do not freeze a
 fictional or obsolete model id into a general template. Model capabilities differ:
 structured output, tools, reasoning parts, embeddings and streaming behavior are
@@ -43,5 +45,5 @@ exhaustion. Contract tests with a chosen provider are separate and need the
 appropriate credentials/cost scope. Record whether model/network behavior was
 actually exercised.
 
-Source: pinned `unstable/ai` and `packages/ai` with upstream examples/tests in
+Source: pinned `packages/effect/src/ai` and `packages/ai` with upstream examples/tests in
 [the source inventory](source-and-coverage.md).

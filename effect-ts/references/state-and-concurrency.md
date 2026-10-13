@@ -45,7 +45,7 @@ Interruption: `Effect.interrupt`, `Effect.onInterrupt(effect, cleanup)`,
 | One-shot signal | `Deferred.make<A, E>()`; `Deferred.succeed/fail/await/poll/complete(effect)` |
 | Gate | `Latch.make(open)`; `Latch.await(latch)`, `Latch.open/close/release` |
 | Limit concurrency | `Semaphore.make(n)`; `Semaphore.withPermits(sem, k)(effect)`, `withPermitsIfAvailable`, `resize`; `PartitionedSemaphore` for fairness across keys in one shared permit pool |
-| Work queue | `Queue.bounded<A, Cause.Done>(n)` / `unbounded` / `sliding` / `dropping`; `offer/offerAll/take/takeAll/takeN/takeBetween/poll`; `Queue.end` (needs `Cause.Done` in E), `Queue.fail(e)`, `Queue.shutdown`; `Stream.fromQueue(q)` |
+| Work queue | `Queue.bounded<A, Cause.Done>(n)` / `unbounded` / `sliding` / `dropping`; `offer/offerAll/take/takeAll/takeN/takeBetween/poll`; `Queue.end` (needs `Cause.Done` in E), `Queue.fail(e)`, `Queue.shutdown` (`false` if already closed); `Stream.fromQueue(q)` |
 | Fan-out events | `PubSub.bounded<A>({ capacity, replay })`; `publish/publishAll`; `Stream.fromPubSub(ps)`; `PubSub.subscribe` (scoped) |
 | Atomic multi-value transactions | `TxRef`, `TxQueue`, `TxHashMap`, `TxSemaphore`, `TxReentrantLock` inside `Effect.tx(...)`; `Effect.txRetry` blocks until a read value changes |
 
@@ -110,7 +110,7 @@ const conn = yield* Effect.acquireRelease(open(), (c, exit) => close(c))   // ne
 yield* Effect.addFinalizer((exit) => cleanup)
 Effect.scoped(effect)                     // provide and close a Scope around effect
 Effect.acquireUseRelease(acquire, use, release)
-const scope = yield* Scope.make(); Scope.provide(effect, scope); Scope.close(scope, Exit.void); Scope.fork(scope)
+const scope = yield* Scope.make(); Scope.provide(effect, scope); Scope.close(scope, Exit.void) /* needs a Closeable from make/fork */; Scope.fork(scope)
 Effect.ensuring(effect, finalizer); Effect.onExit(effect, (exit) => ...); Effect.onError(...)
 ```
 

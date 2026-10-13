@@ -15,7 +15,8 @@ Use both layers of testing:
    compatibility flag, binding, streaming, and module-resolution mismatches.
 
 Cloudflare renamed `@cloudflare/vitest-pool-workers` to
-`@cloudflare/vitest-plugin` in 2026. Use the latter with Vitest 4.1+ or later.
+`@cloudflare/vitest-plugin` in 2026. Use the latter with Vitest 4.1+ or later
+(1.4.0 peers `vitest ^4.1.0 || ^5.0.0`); adding `@effect/vitest` 4.0.x requires Vitest 5.
 Configure it from the same `wrangler.jsonc` used for production:
 
 ```ts

@@ -20,7 +20,7 @@ Use a stable Fetch adapter for HTTP Workers:
 ```ts
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
+import * as HttpRouter from "effect/http/HttpRouter"
 
 const { handler } = HttpRouter.toWebHandler(Routes, { disableLogger: true })
 
@@ -36,8 +36,8 @@ const dispatch = Effect.fn("worker.dispatch")(
 )
 ```
 
-`HttpRouter.toWebHandler` creates a cached adapter whose layer construction is
-lazy on first use. Sharing it is appropriate when the built graph is immutable
+`HttpRouter.toWebHandler` creates a cached adapter and starts building its layer
+immediately (requests wait for an in-progress build; a failed build rejects them all). Sharing it is appropriate when the built graph is immutable
 and performs no invocation-bound I/O. Pass invocation-specific services in its Context argument.
 
 ## Request-scoped services
@@ -82,7 +82,7 @@ params, invoke the named program, render typed failures centrally, then convert
 the response:
 
 ```ts
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 
 const fromWebResponse = (response: Response) =>
   HttpServerResponse.raw(new Response(response.body, {
@@ -100,10 +100,11 @@ immutable headers. Handle WebSocket upgrade responses separately using the host
 adapter; this generic reconstruction does not preserve upgrade-specific fields.
 
 This preserves response metadata and its streaming body when the native body
-already owns its lifetime (e.g. a host-provided R2 body). Supplying outer metadata
-lets Effect remove the body for HEAD while retaining status/headers.
+already owns its lifetime (e.g. a host-provided R2 body). For HEAD, 4.0.3 drops
+the body and keeps the raw Response's status/headers; supplying outer metadata
+keeps Effect-side middleware (logger, tracer, status mapping) consistent with it.
 
-It does **not** transfer a request Scope into a raw Response. In rc.115
+It does **not** transfer a request Scope into a raw Response. In 4.0.3
 `HttpEffect.scopeTransferToStream` transfers ownership only for an Effect Stream
 body. If the body depends on an Effect-scoped connection/resource, use
 `HttpServerResponse.stream(effectStream)` with acquisition inside that lifetime,
@@ -151,12 +152,13 @@ public provenance headers. Public source labels should describe behavior such as
 
 Sources: [Effect importing guidance](https://effect.website/docs/v4/getting-started/importing-effect/),
 [Cloudflare Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/),
-[Effect HttpRouter API](https://github.com/Effect-TS/effect/blob/4a05d4914fa2327a42bd75fe77c22c188becf3b4/packages/effect/src/unstable/http/HttpRouter.ts).
+[Effect HttpRouter API](https://github.com/Effect-TS/effect/blob/967a7dc5963a23d3705259d60ccac1ce9f060a3b/packages/effect/src/http/HttpRouter.ts).
 
 ## Binding-specific storage semantics
 
 D1Client supports atomic fixed batches, not SqlClient.withTransaction or query
-streaming in rc.115. Durable Object SQLite supports transactions with the full
-storage object, not only storage.sql, and rejects nested transactions. See
+streaming in 4.0.3. Durable Object SQLite supports transactions with the full
+storage object, not only storage.sql; nested transactions roll back
+independently, concurrent sibling transactions are unsupported. See
 [SQL and persistence](../sql-and-persistence.md). Effect Workflow and Cloudflare
 Workflows are different engines: choose which owns replay and step identity.

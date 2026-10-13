@@ -14,7 +14,7 @@
     "typecheck": "bun run cf-typegen && tsc --noEmit && tsc --noEmit -p test/tsconfig.json"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.8",
