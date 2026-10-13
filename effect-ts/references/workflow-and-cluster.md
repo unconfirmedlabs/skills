@@ -45,12 +45,12 @@ ownership and durable delivery are actually needed; a local queue needs none.
 Define entity identity, serialization, concurrent handler policy, duplicate
 message handling and failure recovery. Local locks do not replace a durable
 ownership/lease protocol. Test runner loss, retries, duplicate delivery and
-storage outages. CPU workers under `effect/unstable/workers` are a different
+storage outages. CPU workers under `effect/workers` are a different
 facility from cluster runners or Cloudflare Workers.
 
 ## Event logs
 
-`effect/unstable/eventlog` supplies schema-described events/groups, handlers,
+`effect/eventlog` supplies schema-described events/groups, handlers,
 journals, client/server replication, encryption and CRDT helpers. Use it for
 replicated event-driven state or offline synchronization when the application's
 consistency model fits; ordinary logging is Logger, and durable workflow history
@@ -70,5 +70,5 @@ side-effect count, pending work and recovery, using a persistent test engine.
 Document assumptions about remote idempotency, durable store atomicity, leases
 and acknowledgement. A finite happy-path test is not proof of crash safety.
 
-Source: pinned `unstable/workflow`, `unstable/cluster`, `unstable/eventlog` modules
+Source: pinned `workflow`, `cluster`, `eventlog` modules under `packages/effect/src`
 and their tests; [source and coverage](source-and-coverage.md).

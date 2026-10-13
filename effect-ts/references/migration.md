@@ -84,8 +84,8 @@ should remove competing mechanisms, not add ceremonial services to every value.
 
 Pin intended compatible packages and work from the matching v4 checkout's
 `migration/` guides and generated annotations. Verify each replacement in source:
-even an upstream migration page can be stale. In rc.115 Option/Result are not
-directly yieldable despite old migration notes saying otherwise.
+even an upstream migration page can be stale. In 4.0.3 Option/Result are still
+not directly yieldable in `Effect.gen` despite old migration notes saying otherwise.
 
 | v3 seam | v4 direction and semantic review |
 |---|---|
@@ -103,14 +103,87 @@ directly yieldable despite old migration notes saying otherwise.
 | Schema.filter/transform/decodeUnknown | check/refinement, decodeTo/SchemaTransformation, decodeUnknownEffect; retest codec laws |
 | parseJson / JSONSchema | fromJsonString / JsonSchema; check draft and encoding direction |
 | optional fields/defaults | optionalKey vs optional, explicit undefined and decoding defaults |
-| Platform, CLI, SQL, RPC, AI family packages | Many moved under effect/unstable; actual platform/SQL/provider adapters remain separate |
-| CLI Options/Args and earlier v4 constructors | Flag/Argument; rc.115 uses String/Boolean/Int/Finite/Literals; Prompt.String/Select/Confirm; verify argv and exit behavior |
+| Platform, CLI, SQL, RPC, AI family packages | Moved into `effect/*` namespaces (`effect/http`, `effect/cli`, `effect/sql`, `effect/rpc`, `effect/ai`, ...), mostly `@stability unstable`; platform/SQL-driver/provider adapters remain separate `@effect/*` packages |
+| CLI Options/Args and earlier v4 constructors | Flag/Argument; 4.0.3 uses String/Boolean/Int/Finite/Literals; Prompt.String/Select/Confirm; verify argv and exit behavior |
 | HttpApi builder and endpoint syntax | v4 options/schema APIs; recheck middleware, errors, HEAD, streaming and clients |
 | Equality/hash and collection keys | v4 equality semantics differ; test caches/dedup/maps with real key values |
+| `@effect/vitest` `it.scoped` / `it.scopedLive` | `it.effect` / `it.live`, which provide and close a Scope; `it.scoped` is now Vitest's fixture API |
 
 Do not mechanically upgrade every `@effect/*` dependency to one version: inspect
 peer requirements, independently versioned tooling and obsolete merged packages.
 Use compiler diagnostics to guide edits, not `any`/casts or `orDie` to silence them.
+
+## Effect v4 release candidates to 4.0.x
+
+`4.0.0` (2026-10-01) is the first stable v4; `4.0.x` is LTS. Move the whole
+release train together (`effect` and every `@effect/platform-*`, `sql-*`, `ai-*`,
+`atom-*`, `vitest`, `opentelemetry` package at the same version); mixed rc/stable
+installs fail on the import paths below. Source: `packages/effect/CHANGELOG.md`
+sections `4.0.0-rc.116` to `4.0.3` and `MIGRATION.md` ("Unstable Module System").
+Changes that break code written for rc.115–rc.117:
+
+| rc code | 4.0.x | Detected by |
+|---|---|---|
+| `effect/unstable/<m>/...` (rc.118 removed; no compatibility exports) | `effect/<m>/...`, e.g. `effect/http/HttpClient`, `effect/persistence/KeyValueStore`, `effect/cli/Command` | module resolution |
+| `effect/unstable/httpapi/*` | `effect/http-api/*` | module resolution |
+| `effect/unstable/arbitrary/Arbitrary`, `effect/unstable/schema` | `effect/Arbitrary`; `effect/schema` (`Model`, `VariantSchema`) | module resolution |
+| `effect/Encoding` (`Encoding.encodeBase64` etc.) | `effect/encoding/Base64`, `Base64Url`, `Hex`; failures from `effect/encoding/EncodingError` | module resolution |
+| `Schema.isLengthBetween`, `isSizeBetween`, `isPropertiesLengthBetween`, `isStartsWith`, `isEndsWith`, `isIncludes` | `isBetweenLength`, `isBetweenSize`, `isBetweenProperties`, `isStartingWith`, `isEndingWith`, `isIncluding` | compiler |
+| `SchemaTransformation.make`, `transformation.compose(t)`, `SchemaGetter.onSome/onNone`, `new SchemaGetter.Getter` | `makeTransformation`, `composeTransformation(first, second)`, `transformEffect` / `transformOptionalEffect` | compiler |
+| `TestSchema` `verifyLosslessTransformation` | `verifyRoundTrip` (plus `succeedEffect`, `failEffect`, `verifyRoundTripEffect`) | compiler |
+| `Effect/Array/Chunk/Record.partition`, `separate`, `Option.partitionMap` returning `[failures, successes]` | `[successes, failures]`; `Stream.partition` returns `[passes, fails]` | **silent when both sides have the same type**; review every destructuring |
+| `Effect.orElseSucceed(() => a)` | callback receives the error | compiler only if the arity matters |
+| `Scope.close(scope, exit)` on a plain `Scope.Scope` | needs a `Scope.Closeable` from `Scope.make`/`Scope.fork` | compiler |
+| `Schema.brand` with several identifiers / brand read from AST annotations | one identifier per `brand` call (apply repeatedly); brands are type-only | compiler / representation tests |
+| `crypto.randomUUIDv4` / `randomUUIDv7` as values | call them: `randomUUIDv4()`, optional `{ format: "bytes" }` (4.0.3) | compiler |
+| `Queue.shutdown` result ignored as `true`; `Queue.State.takers` entries called as functions | returns `false` if already done; call `entry.resume(...)` | compiler / tests |
+| `ByteSize.Input` from arbitrary strings | only canonical literals; parse others with `ByteSize.fromString` | compiler |
+| `Effect.repeat({ times/schedule, until: refinement })` narrowing | result keeps the source type | compiler |
+| `Config.withDefault`/`option` around a partly present `Config.all` group | group default now replaces the whole group | tests |
+| AI telemetry `system` option, `WellKnownSystem`, `BaseAttributes` (4.0.2) | `provider: { name }`, `ProviderAttributes`, `WellKnownProviderName` | compiler |
+| `@effect/vitest` `it.effect.each` | receives the test context as second argument | compiler |
+
+From rc.112 or earlier, first apply rc.113's renames: `Config.string/number/...`
+to PascalCase `Config.String/Number/...` and `Config.mapOrFail` to `Config.mapEffect`;
+PascalCase CLI constructors (`Flag.String`, `Argument.Int`, `Prompt.String`);
+`SchemaGetter/SchemaTransformation.transformOrFail` to `transformEffect`;
+`Channel.runDone` to `Channel.runDrain`; MessagePack serialization removed (use
+SchemaBinary or NDJSON); `Reactivity`, `LanguageModel`, `EmbeddingModel`, `Chat`
+referenced by their same-name types instead of `.Service`; `@effect/sql-pg` now uses
+a native client instead of `pg`.
+
+Behavior and wire changes to review even when everything compiles:
+
+- HttpApi runtime TypeIds and service keys moved from `effect/httpapi/*` to
+  `effect/http-api/*`, and the reserved SSE stream-failure event is now
+  `effect/http-api/stream/failure`. A client and server on different sides of
+  the rename do not recognize each other's stream failures; deploy them together
+  or keep both on one version.
+- Persisted Schema check IDs (`SchemaRepresentation` documents) use the renamed
+  check names; regenerate or migrate stored representations.
+- Workflow execution IDs are now derived from a length-prefixed tag plus
+  idempotency key (rc.118), so in-flight durable workflows started on an rc do not
+  resume under the same ID. Drain them before upgrading.
+- `Hash` values and `HashRing` shard assignments may change; do not persist them
+  across the upgrade.
+- `Effect.race*` now interrupt losers that are still starting; `Effect.cached*`,
+  `Cache`, `RcRef`/`RcMap` treat caller interruption as abandonment (4.0.1);
+  `Scope.close` finalizers run uninterruptibly; CLI prompts end on Esc by default.
+
+Mechanical first pass (GNU sed shown), then fix compiler errors and review the partition sites:
+
+```sh
+rg -l 'effect/unstable/' --glob '*.{ts,tsx,mts,cts}' . | xargs sed -i -E \
+  -e 's#effect/unstable/httpapi#effect/http-api#g' \
+  -e 's#effect/unstable/arbitrary/Arbitrary#effect/Arbitrary#g' \
+  -e 's#effect/unstable/#effect/#g'
+rg -n '"effect/arbitrary"|effect/Encoding|\bpartition\(|\bseparate\(|partitionMap' --glob '*.{ts,tsx}' .
+```
+
+The last pass turns the removed barrel into a nonexistent `"effect/arbitrary"`:
+`import { Arbitrary } from "effect/unstable/arbitrary"` becomes
+`import * as Arbitrary from "effect/Arbitrary"` (or `import { Arbitrary } from "effect"`).
+Pin `effect@4.0.x` explicitly: the `rc` dist-tag still points at a release candidate.
 
 ## Correctness evidence and limits
 

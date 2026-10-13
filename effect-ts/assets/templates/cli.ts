@@ -9,9 +9,9 @@ import * as Schema from "effect/Schema"
 import * as Stdio from "effect/Stdio"
 import * as Stream from "effect/Stream"
 import * as Logger from "effect/Logger"
-import * as Argument from "effect/unstable/cli/Argument"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Argument from "effect/cli/Argument"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 
 // Data has an explicit stdout sink; built-in help/errors use the Console service.
 const writeData = Effect.fn("writeData")(function*(text: string) {
@@ -62,7 +62,7 @@ const list = Command.make(
 root.pipe(
   Command.withSubcommands([create, list]),
   Command.run({ version: "0.1.0" }),
-  // rc.115 prints parser help through Console.log even with renderErrors:false.
+  // 4.0.3 prints parser help (and --help/--version) through Console.log, even with renderErrors:false.
   // This starter routes built-in help/version/diagnostics to stderr, data to stdout.
   Effect.updateService(Console.Console, current => ({
     ...current,

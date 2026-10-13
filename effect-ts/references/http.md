@@ -4,12 +4,12 @@ Requires: [services](services.md), [Schema](schema.md), [streams](streams.md).
 Code blocks are API sketches with domain placeholders; compile the chosen slice
 and inspect exact source overloads before use.
 
-Imports: `effect/unstable/httpapi` (HttpApi, HttpApiGroup, HttpApiEndpoint,
+Imports: `effect/http-api` (HttpApi, HttpApiGroup, HttpApiEndpoint,
 HttpApiSchema, HttpApiError, HttpApiMiddleware, HttpApiSecurity, HttpApiBuilder,
 HttpApiClient, HttpApiTest, HttpApiScalar, HttpApiSwagger, OpenApi),
-`effect/unstable/http` (HttpRouter, HttpServer, HttpServerRequest,
+`effect/http` (HttpRouter, HttpServer, HttpServerRequest,
 HttpServerResponse, HttpMiddleware, HttpEffect, HttpStaticServer, HttpClient,
-HttpClientRequest, HttpClientResponse, FetchHttpClient), `effect/unstable/rpc`,
+HttpClientRequest, HttpClientResponse, FetchHttpClient), `effect/rpc`,
 `@effect/platform-bun` (BunHttpServer, BunHttpClient = FetchHttpClient).
 
 ## HttpApi (schema-first; preferred for any JSON API)
@@ -39,7 +39,7 @@ class Api extends HttpApi.make("my-api").add(UsersGroup).add(SystemGroup)
   .annotateMerge(OpenApi.annotations({ title: "My API", version: "1.0.0" })) {}
 ```
 
-- Verbs: `get, post, put, patch, delete, head, options`. Options object only:
+- Verbs: `get, query, post, put, patch, delete, head, options`. Options object only:
   `{ params, query, headers, payload, success, error, disableCodecs }`.
 - `params/query/headers` take a fields object or schema; values are decoded
   from strings automatically. GET `payload` maps to the query string.
@@ -50,7 +50,10 @@ class Api extends HttpApi.make("my-api").add(UsersGroup).add(SystemGroup)
   `asMultipartStream()`, `asFormUrlEncoded`, `asNoContent({ decode })`,
   `StreamSse({ data })`, `StreamUint8Array()`, `WithHeaders(body, headers)`.
 - Built-in errors: `HttpApiError.NotFound/BadRequest/Unauthorized/Forbidden/Conflict/UnprocessableEntity/...`
-  and `*NoContent` schema variants. Schema decode failures become 400 `HttpApiSchemaError`.
+  and `*NoContent` schema variants. Request decode failures become 400 `HttpApiSchemaError`
+  (not reported as server failures); response encode failures become 500.
+  Codec strictness: `.annotate(HttpApi.ParseOptions, {...})` on API/group/endpoint,
+  per-slot `HeadersParseOptions`/`PayloadParseOptions`/... override it.
 
 ### Handlers and wiring
 
@@ -194,7 +197,7 @@ Timeouts: `Effect.timeout("10 seconds")` on the call. Cookies: `HttpClient.withC
 const GetUser = Rpc.make("GetUser", { payload: { id: Schema.String }, success: User, error: UserNotFound })
 const Ticks = Rpc.make("Ticks", { success: Schema.Number, stream: true })
 class UserRpcs extends RpcGroup.make(GetUser, Ticks) {}
-const UserRpcsLive = UserRpcs.toLayer({ GetUser: ({ id }) => users.get(id), Ticks: () => Stream.tick("1 second").pipe(Stream.scan(0, (n) => n + 1)) })
+const UserRpcsLive = UserRpcs.toLayer({ GetUser: ({ id }) => users.get(id), Ticks: () => Stream.tick("1 second").pipe(Stream.scan(() => 0, (n) => n + 1)) })
 
 const RpcRoutes = RpcServer.layerHttp({ group: UserRpcs, path: "/rpc", protocol: "http" })   // default websocket
   .pipe(Layer.provide(UserRpcsLive), Layer.provide(RpcSerialization.layerNdjson))
@@ -206,8 +209,8 @@ const user = yield* client.GetUser({ id })
 ```
 
 Serialization: `layerNdjson`/`layerNdJsonRpc` for byte streams (HTTP body,
-stdio), `layerJson`/`layerMsgPack` when the transport frames messages
-(WebSocket). `RpcServer.layerProtocolStdio` turns a CLI into an RPC server for
+stdio), `layerJson` when the transport frames messages (WebSocket);
+`layerSchemaBinary()` is a self-framing binary codec (MessagePack was removed). `RpcServer.layerProtocolStdio` turns a CLI into an RPC server for
 agent tooling; `RpcMiddleware.Service` mirrors HttpApiMiddleware;
 `RpcTest.makeClient(group)` for in-memory tests; `Rpc.fork` on a handler
 lets it run concurrently with others on the same connection.

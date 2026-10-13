@@ -3,8 +3,8 @@ import { createExecutionContext } from "cloudflare:test"
 import { expect, it } from "vitest"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
-import * as HttpEffect from "effect/unstable/http/HttpEffect"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+import * as HttpEffect from "effect/http/HttpEffect"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import worker from "../src/index"
 
 it("preserves already-aborted invocation cancellation", async () => {

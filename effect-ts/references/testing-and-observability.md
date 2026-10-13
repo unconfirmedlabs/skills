@@ -68,7 +68,7 @@ const TestConfig = ConfigProvider.layer(ConfigProvider.fromUnknown({ PORT: 4000,
 const asserts = new TestSchema.Asserts(Schema.NumberFromString)
 await asserts.decoding().succeed("42", 42)
 await asserts.decoding().fail(null, "Expected string")
-await asserts.verifyLosslessTransformation({ params: { numRuns: 50 } })
+await asserts.verifyRoundTrip({ runs: 50 })   // Effect forms: decoding().succeedEffect, failEffect, verifyRoundTripEffect
 ```
 
 `DateTime.now`, sleep and schedules use Clock. Random uses its own configurable
@@ -89,9 +89,14 @@ client-side middleware layer (`HttpApiMiddleware.layerClient(Authorization, ...)
 
 ### If the project uses vitest
 
-`@effect/vitest` (same rc version) provides `it.effect` (TestClock + TestConsole
-provided), `it.live` (real services), `it.scoped`, `it.effect.prop(name, [Schema], fn)`,
-and `layer(L)("name", (it) => ...)` for one shared layer per block.
+`@effect/vitest` (same version as effect; peers `vitest >=5 <6`) provides `it.effect` (TestClock + TestConsole
+provided), `it.live` (real services), `it.effect.prop(name, [Schema], fn)`,
+`it.effect.each(cases)(name, (c, ctx) => ...)`, `it.flakyTest`, and
+`layer(L)("name", (it) => ...)` for one shared layer per block. Both `it.effect`
+and `it.live` provide a Scope closed when the test ends, so v3 `it.scoped` /
+`it.scopedLive` (absent from @effect/vitest rc.115 and 4.0.3) become `it.effect` /
+`it.live`. In 4.0.x `it.scoped` is Vitest's own fixture override
+(`it.scoped(fixtures)`), not an Effect test; `it.scoped(name, effect)` fails to compile.
 
 ## Logging
 
@@ -133,8 +138,8 @@ headers on by default) and servers.
 ### Exporters
 
 ```ts
-import { FetchHttpClient } from "effect/unstable/http"
-import { Otlp, OtlpLogger, OtlpMetrics, OtlpSerialization, OtlpTracer, PrometheusMetrics } from "effect/unstable/observability"
+import { FetchHttpClient } from "effect/http"
+import { Otlp, OtlpLogger, OtlpMetrics, OtlpSerialization, OtlpTracer, PrometheusMetrics } from "effect/observability"
 
 // everything to one OTLP collector
 const Observability = Otlp.layerJson({
@@ -167,7 +172,7 @@ is exported: `AppLayer.pipe(Layer.provide(Observability))`. Use
 ## Properties, laws and behavioral evidence
 
 Use Schema-generated arbitraries/fast-check for codec laws, pure transitions and
-collection invariants. `effect/unstable/arbitrary/Arbitrary` also supplies schema
+collection invariants. `effect/Arbitrary` also supplies schema
 generation, `checkEffect`, `sampleEffect`, shrinking and replay tokens. A generated
 input property needs its own stateful fixture: `checkEffect` does not reset
 mutable services between cases. Capture seed/replay on failure.
@@ -178,7 +183,7 @@ critical child errors reach an owner, and retries do not duplicate mutations.
 Use type tests for success/error/requirements and rejected misuse. Do not count
 a compiler pass as runtime validation or a fake's success as backend equivalence.
 
-`TestClock`, `TestConsole`, `TestSchema` and other testing modules are discoverable
+`TestClock`, `TestConsole`, `TestCrypto`, `TestSchema` and other testing modules are discoverable
 through the inventory. @effect/vitest is an optional runner integration; preserve
 the project's existing runner when plain Effect test services suffice.
 

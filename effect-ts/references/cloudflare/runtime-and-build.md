@@ -72,11 +72,11 @@ Write the library in Effect's public namespace-subpath form:
 ```ts
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
+import * as HttpRouter from "effect/http/HttpRouter"
 ```
 
 Do not use `import { Effect, Schema } from "effect"` or
-`import { HttpRouter } from "effect/unstable/http"` in Worker application code.
+`import { HttpRouter } from "effect/http"` in Worker application code.
 Named barrel imports require deep-scope analysis. Effect documents Rolldown,
 Rollup, and Webpack 5+ as supporting it; Wrangler's production bundler is
 esbuild. Public subpaths express the dependency precisely and work with either

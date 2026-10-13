@@ -6,7 +6,7 @@ verify exact overloads in [source and coverage](source-and-coverage.md).
 `Schema.Codec<Type, Encoded, DecodingServices, EncodingServices>`. Decoding
 turns untrusted `Encoded` (JSON, strings, rows) into `Type`; encoding reverses
 it. Every boundary decodes; domain code only sees `Type`. v4 renamed most of
-the v3 surface; the names below are verified against `effect@4.0.0-rc.115`.
+the v3 surface; the names below are verified against `effect@4.0.3`.
 
 ## Building schemas
 
@@ -46,7 +46,7 @@ Types: `typeof User.Type`, `typeof User.Encoded`, `Schema.Schema.Type<typeof S>`
 `Schema.Codec.Encoded<typeof S>`. Branded ids:
 
 ```ts
-const UserId = Schema.String.pipe(Schema.brand("UserId"))
+const UserId = Schema.String.pipe(Schema.brand("UserId"))   // one identifier per brand call; type-only (not kept in the AST)
 type UserId = typeof UserId.Type
 UserId.make("u_1")     // validates + brands
 const PositiveInt = Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)), Schema.brand("PositiveInt"))
@@ -65,11 +65,11 @@ Schema.refine((n: number): n is Positive => n > 0)     // narrows the TS type
 S.annotate({ title, description, examples, message, identifier })
 ```
 
-Filter constructors: `isTrimmed, isPattern, isStartsWith, isEndsWith, isIncludes,
-isUppercased, isLowercased, isUUID, isULID, isBase64, isFinite, isInt, isInt32,
+Filter constructors: `isTrimmed, isPattern, isStartingWith, isEndingWith, isIncluding,
+isUppercased, isLowercased, isUUID, isULID, isBase64, isFinite, isInt (safe integer), isInt32,
 isGreaterThan(OrEqualTo), isLessThan(OrEqualTo), isBetween, isMultipleOf,
-isMinLength, isMaxLength, isLengthBetween, isNonEmpty, isMinSize, isMaxSize,
-isUnique, isMinProperties, isPropertyNames, is*Date, is*BigInt`. `Schema.filter`,
+isMinLength, isMaxLength, isBetweenLength, is(Min|Max|Between)CodePoints, isNonEmpty, isMinSize, isMaxSize,
+isBetweenSize, isUnique, isMinProperties, isBetweenProperties, isPropertyNames, is*Date, is*BigInt`. `Schema.filter`,
 `Schema.int()`, `Schema.positive()` do not exist.
 
 ## Transformations
@@ -80,8 +80,8 @@ isUnique, isMinProperties, isPropertyNames, is*Date, is*BigInt`. `Schema.filter`
 import { Schema, SchemaGetter, SchemaTransformation } from "effect"
 
 const Cents = Schema.Number.pipe(Schema.decodeTo(Schema.Int, SchemaTransformation.transform({ decode: (d) => Math.round(d * 100), encode: (c) => c / 100 })))
-const Csv = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), SchemaTransformation.make({
-  decode: SchemaGetter.trim<string>().compose(SchemaGetter.split<string>({ separator: "," })),
+const Csv = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), SchemaTransformation.makeTransformation({
+  decode: SchemaGetter.trim<string>().pipe(SchemaGetter.compose(SchemaGetter.split<string>({ separator: "," }))),
   encode: SchemaGetter.transform((arr: ReadonlyArray<string>) => arr.join(","))
 })))
 const Parsed = Schema.String.pipe(Schema.decodeTo(Schema.Date, SchemaTransformation.transformEffect({
@@ -95,8 +95,8 @@ Schema.Struct({ n: Schema.Natural.pipe(Schema.withDecodingDefault(Effect.succeed
 Schema.optionalKey(S).pipe(Schema.decodeTo(S, { decode: SchemaGetter.withDefault(Effect.succeed(d)), encode: SchemaGetter.passthrough() }))
 ```
 
-`SchemaGetter` legs: `transform`, `transformEffect`, `transformOptional`,
-`withDefault`, `required`, `onNone`, `onSome`, `String()`, `Number()`, `trim`,
+`SchemaGetter` legs: `transform`, `transformEffect`, `transformOptional`, `transformOptionalEffect`,
+`withDefault`, `required`, `compose`, `String()`, `Number()`, `trim`,
 `split`, `parseJson`, `stringifyJson`, `snakeToCamel`, `decodeBase64`, `encodeHex`...
 `SchemaTransformation` presets: `trim`, `toLowerCase`, `numberFromString`,
 `dateFromString`, `fromJsonString`, `optionFromNullOr`, `urlFromString`,
@@ -115,7 +115,7 @@ Schema.decodeEffect(S)(encoded)        // input already typed as Encoded
 Schema.encodeEffect(S)(value) / encodeSync / encodeUnknownEffect / encodeResult ...
 Schema.is(S)(u)                        // type guard
 Schema.asserts(S, u)                   // asserts u is Type; throws Error with .cause = Issue
-// parse options: { errors: "all" | "first", onExcessProperty: "ignore" | "error" | "preserve", reportInput: true }
+// parse options: { errors: "all" | "first", onExcessProperty: "ignore" | "error", reportInput: true }
 ```
 
 `SchemaError` is a `TaggedError` (`_tag: "SchemaError"`, `.issue`, `.message`).
@@ -124,9 +124,9 @@ Format issues with `SchemaIssue.makeFormatterDefault()(error.issue)` or
 Map it to a domain error at the boundary:
 `Effect.mapError((e) => new InvalidPayload({ message: e.message }))`.
 
-Derived tools: `Schema.toJsonSchemaDocument(S, { additionalProperties, generateDescriptions })`
+Derived tools: `Schema.toJsonSchemaDocument(S, { onExcessProperty, generateDescriptions })`
 (no `toJsonSchema`), `JsonSchema.toDocumentDraft07(doc)`, `Schema.toStandardSchemaV1(S)`,
-`Schema.toEquivalence(S)`, `Arbitrary.schema(S)` from `effect/unstable/arbitrary/Arbitrary`, `Schema.toFormatter(S)`,
+`Schema.toEquivalence(S)`, `Arbitrary.schema(S)` from `effect/Arbitrary`, `Schema.toFormatter(S)`,
 `Schema.toType(S)` / `Schema.toEncoded(S)` (drop transformations), `Schema.revealCodec(S)`.
 
 ## Errors
@@ -163,7 +163,7 @@ and match exhaustively, which is the foundation of the state-machine pattern.
 
 ## Database models
 
-`Model.Class` from `effect/unstable/schema` derives `select` (default),
+`Model.Class` from `effect/schema` derives `select` (default),
 `insert`, `update`, `json`, `jsonCreate`, `jsonUpdate` variants from one field
 list: `Model.GeneratedByDb(S)`, `Model.GeneratedByApp(S)`, `Model.UuidV4Insert(Id)`,
 `Model.Sensitive(S)`, `Model.DateTimeInsert`, `Model.DateTimeUpdate`,
@@ -177,7 +177,8 @@ to fill generated ids and timestamps from the Clock. See data-and-workflows.
 ```ts
 const asserts = new TestSchema.Asserts(User)
 await asserts.decoding().succeed(json, expected); await asserts.decoding().fail(bad, "Expected string")
-await asserts.encoding().succeed(value, encoded); await asserts.verifyLosslessTransformation()
+await asserts.encoding().succeed(value, encoded); await asserts.verifyRoundTrip()   // TestSchema from effect/testing
+// succeedEffect/failEffect run inside Effect (services, TestClock); asserts.decoding().succeedEffect(json, expected)
 ```
 
 ## JSON, derivation and correctness

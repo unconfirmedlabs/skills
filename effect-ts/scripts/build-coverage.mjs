@@ -76,19 +76,21 @@ function docs(symbol) {
 }
 function guide(m) {
   const n=m.module
-  if(n.includes('/testing')||n==='@effect/vitest'||/opentelemetry|observability|devtools|doctest|docgen|effect-utils|ai-codegen|ai-docgen|\/unstable\/arbitrary/.test(n)) return 'testing-and-observability.md'
-  if(/\/unstable\/(reactivity|socket|net|workers)|@effect\/atom-/.test(n))return 'reactivity-and-integrations.md'
-  if(/\/unstable\/ai(?:\/|$)|@effect\/ai-/.test(n))return 'ai.md'
-  if(/\/unstable\/(workflow|cluster|eventlog)/.test(n))return 'workflow-and-cluster.md'
-  if(/\/unstable\/(sql|schema|persistence)|@effect\/sql-/.test(n))return 'sql-and-persistence.md'
-  if(/\/unstable\/(http|httpapi|rpc)|openapi-generator/.test(n))return 'http.md'
-  if(/\/unstable\/(cli|process)/.test(n))return 'cli.md'
-  if(/\/unstable\/encoding/.test(n))return 'streams.md'
+  if(n.includes('/testing')||n==='@effect/vitest'||n==='effect/Arbitrary'||/opentelemetry|observability|devtools|doctest|docgen|effect-utils|ai-codegen|ai-docgen/.test(n)) return 'testing-and-observability.md'
+  if(/^effect\/(reactivity|socket|net|workers)(\/|$)|@effect\/atom-/.test(n))return 'reactivity-and-integrations.md'
+  if(/^effect\/ai(\/|$)|@effect\/ai-/.test(n))return 'ai.md'
+  if(/^effect\/(workflow|cluster|eventlog)(\/|$)/.test(n))return 'workflow-and-cluster.md'
+  if(/^effect\/(sql|persistence)(\/|$)|^effect\/schema\/(Model|VariantSchema)$|@effect\/sql-/.test(n))return 'sql-and-persistence.md'
+  if(/^effect\/(http|http-api|rpc)(\/|$)|openapi-generator/.test(n))return 'http.md'
+  if(/^effect\/(cli|process)(\/|$)/.test(n))return 'cli.md'
+  if(/^effect\/encoding\/(Base64|Base64Url|Hex|EncodingError)$/.test(n))return 'standard-library.md'
+  if(/^effect\/encoding(\/|$)/.test(n))return 'streams.md'
+  if(/^effect\/schema(\/|$)/.test(n))return 'schema.md'
   if(/@effect\/platform-/.test(n))return 'project-setup.md'
   const base=n.split('/').at(-1)
   if(/^Schema|^(JsonSchema|StandardSchema)$/.test(base))return 'schema.md'
   if(/^(Effect|Cause|Exit|Result|Option|Runtime|Effectable)$/.test(base))return 'core.md'
-  if(/^(Context|Layer|LayerMap|LayerRef|Resource|ManagedRuntime|Config|ConfigProvider|Scope|Pool|RcMap|RcRef|ScopedRef|References|ServiceMap)$/.test(base))return 'services.md'
+  if(/^(Context|Layer|LayerMap|LayerRef|Resource|ManagedRuntime|Config|ConfigProvider|Scope|Pool|RcMap|RcRef|ScopedRef|References)$/.test(base))return 'services.md'
   if(/^(Cache|ScopedCache|Schedule|ExecutionPlan|Request|RequestResolver)$/.test(base))return 'resilience.md'
   if(/^(Fiber.*|Tx.*|Ref|SynchronizedRef|SubscriptionRef|Deferred|Latch|Semaphore|PartitionedSemaphore|Queue|PubSub|Scheduler)$/.test(base))return 'state-and-concurrency.md'
   if(/^(Stream|Sink|Channel|ChannelSchema|Pull|Take)$/.test(base))return 'streams.md'
@@ -100,7 +102,7 @@ const records=[]
 for(const m of modules) {
   const sf=program.getSourceFile(m.file), moduleSymbol=checker.getSymbolAtLocation(sf)
   const source=path.relative(root,m.file).split(path.sep).join('/')
-  const first=sf.text.match(/^\s*\/\*\*([\s\S]*?)\*\//)?.[1]?.replace(/^\s*\* ?/gm,'').split(/\n\s*\n|@since/)[0]||''
+  const first=sf.text.match(/^\s*\/\*\*([\s\S]*?)\*\//)?.[1]?.replace(/^\s*\* ?/gm,'').split(/\n\s*\n|@since|@stability/)[0]||''
   const symbols=moduleSymbol?checker.getExportsOfModule(moduleSymbol).map(s=>{
     const original=s.flags&ts.SymbolFlags.Alias?checker.getAliasedSymbol(s):s
     const decl=original.declarations?.[0]??s.declarations?.[0]
@@ -112,11 +114,13 @@ for(const m of modules) {
       ...(tags.some(t=>t.name==='deprecated')?{deprecated:true}:{}),
       ...(origin?{source:path.relative(root,origin.fileName).split(path.sep).join('/'),line}:{})}
   }).sort((a,b)=>a.name.localeCompare(b.name,'en')):[]
-  if (!symbols.length) throw new Error(`No exports resolved for ${m.module}; check workspace resolution.`)
+  // Side-effect entrypoints such as effect/schema/SchemaJITCompiler/enable have no exports.
+  const sideEffect=!symbols.length&&!/^\s*export\b/m.test(sf.text)
+  if (!symbols.length&&!sideEffect) throw new Error(`No exports resolved for ${m.module}; check workspace resolution.`)
   if (symbols.some(s=>!s.source)) throw new Error(`Unresolved export in ${m.module}; inspect imports.`)
   records.push({module:m.module,package:m.package,version:m.version,guide:guide(m),source,
-    stability:m.module.includes('/unstable/')?'unstable':'release-versioned',
-    summary:clean(first),symbols})
+    stability:sf.text.match(/^\s*\/\*\*[\s\S]*?\*\//)?.[0].match(/@stability\s+(stable|unstable|experimental)/)?.[1]??'unspecified',
+    ...(sideEffect?{sideEffect:true}:{}),summary:clean(first),symbols})
 }
 fs.mkdirSync(out,{recursive:true})
 const data=records.map(r=>JSON.stringify(r)).join('\n')+'\n'
@@ -130,8 +134,8 @@ const lines=['# Generated Effect v4 module map','',`Baseline: **${baseline}**, s
   '',`${records.length} public module entrypoints (including barrels), ${records.filter(r=>!r.source.endsWith('/index.ts')).length} leaf modules; ${packages.length} non-private source packages.`,
   '', 'Generated from package export maps and TypeScript module symbols. See [source and coverage](../source-and-coverage.md) for scope and regeneration.',
   'Every exported symbol, category, available upstream use cue and source location is searchable in `api-index.jsonl`; do not load it wholesale.',
-  '', '| Public module | Guide | Exports | Purpose / source |','|---|---|---:|---|']
-for(const r of records)lines.push(`| \`${r.module}\` | [guide](../${r.guide}) | ${r.symbols.length} | [${esc(r.summary||r.module)}](${url}${r.source}) |`)
+  '', '| Public module | Stability | Guide | Exports | Purpose / source |','|---|---|---|---:|---|']
+for(const r of records)lines.push(`| \`${r.module}\` | ${r.stability} | [guide](../${r.guide}) | ${r.symbols.length} | [${esc(r.summary||r.module)}](${url}${r.source}) |`)
 fs.writeFileSync(path.join(out,'modules.md'),lines.join('\n')+'\n')
 fs.copyFileSync(path.join(root,'LICENSE'),path.join(out,'EFFECT-LICENSE.txt'))
 console.log(JSON.stringify({version:baseline,modules:records.length,exports:records.reduce((n,r)=>n+r.symbols.length,0),bytes:Buffer.byteLength(data)}))

@@ -3,11 +3,11 @@
 Requires: [services](services.md), [Schema](schema.md), [streams](streams.md).
 API sketches below need their domain definitions and target-version verification.
 
-Imports: `effect/unstable/cli` (Command, Flag, Argument, Prompt, GlobalFlag,
+Imports: `effect/cli` (Command, Flag, Argument, Prompt, GlobalFlag,
 CliConfig, CliOutput, CliError, Completions), `effect` (FileSystem, Path,
-Stdio, Terminal, Console, PlatformError), `effect/unstable/process`
-(ChildProcess, ChildProcessSpawner), `effect/unstable/persistence`
-(KeyValueStore), `effect/unstable/encoding` (Ndjson, Msgpack, Yaml, Toml, Ini).
+Stdio, Terminal, Console, PlatformError), `effect/process`
+(ChildProcess, ChildProcessSpawner), `effect/persistence`
+(KeyValueStore), `effect/encoding` (Ndjson, Yaml, Toml, Ini).
 `BunServices.layer` from `@effect/platform-bun` satisfies every requirement.
 
 For broader product design, the optional `cli-design` skill can help. The local contract is: stdout carries
@@ -49,7 +49,7 @@ root.pipe(
 - `Command.provide(layer | (input) => layer)`, `provideEffect(Key, effect | (input) => effect)`,
   `provideSync` build dependencies from parsed input (e.g. DB client from `--db-url`).
 - `Command.runWith(cmd, { version })(argv)` for tests; `Command.run` reads `Stdio.args`.
-- Built-in global flags: `--help/-h`, `--version/-v`, `--completions bash|zsh|fish`,
+- Built-in global flags: `--help/-h`, `--version/-v`, `--completions bash|zsh|fish|powershell`,
   `--log-level`, wizard mode. Add your own once:
   `const jsonOut = GlobalFlag.Setting("json-output")({ flag: Flag.Boolean("json").pipe(Flag.withDefault(false)) })`,
   read it in any handler with `yield* jsonOut`, and apply
@@ -61,7 +61,7 @@ root.pipe(
 
 ### Flags and arguments
 
-Constructors in rc.115 are capitalized: `String, Boolean` (Flag), `Int, Finite, Date, Literals(name, [...])`,
+Constructors in 4.0.3 are capitalized: `String, Boolean` (Flag), `Int, Finite, Date, Literals(name, [...])`,
 `ChoiceWithValue(name, [["a", A]])`, `Path(name, { pathType, mustExist })`, `File`,
 `Directory`, `Redacted` (Redacted<string>), `FileText`, `FileParse`
 (json/yaml/toml/ini by extension), `FileSchema(name, schema)`, `KeyValuePair` (Flag)
@@ -81,7 +81,7 @@ Parse errors render help and exit 1. Handler failures propagate to
 `BunRuntime.runMain`, which prints the cause and exits 1. To control the code,
 fail with `new CliError.UserError({ cause })` or attach `Runtime.errorExitCode`.
 For machine-readable errors, own the rendering and test actual argv failures.
-In rc.115 `renderErrors: false` disables formatted errors but still prints
+In 4.0.3 `renderErrors: false` disables formatted errors but still prints
 ShowHelp through Console.log. Merely setting that flag does not keep stdout clean.
 The CLI starter separates data into a Stdio stdout sink and routes built-in
 help/version/diagnostics through a stderr Console override. If explicit help must
@@ -149,7 +149,7 @@ Non-zero exit does not fail `string`/`lines` by itself; check `exitCode`.
 
 ```ts
 const stdio = yield* Stdio.Stdio
-yield* stdio.args; yield* stdio.stdinIsTerminal; yield* stdio.stdoutIsTerminal
+yield* stdio.args; yield* stdio.stdinIsTerminal; yield* stdio.stdoutIsTerminal; yield* stdio.stderrIsTerminal
 stdio.stdin.pipe(Stream.decodeText(), Stream.splitLines)      // read lines
 Stream.run(stdio.stdout())                                     // Sink<string | Uint8Array>
 yield* Console.log(JSON.stringify(result))                     // data -> stdout
@@ -157,7 +157,8 @@ yield* Console.error("diagnostic")                             // diagnostics ->
 ```
 
 Send logs to stderr in CLIs so stdout stays parseable:
-`Logger.layer([Logger.consolePretty({ stderr: true })])` or `Layer.succeed(Logger.LogToStderr, true)`.
+`Layer.succeed(Logger.LogToStderr, true)` (default and TTY pretty loggers) or
+`Logger.layer([Logger.withConsoleError(Logger.formatJson)])`.
 
 ## Streams of records
 
@@ -166,7 +167,7 @@ stdio.stdin.pipe(Stream.pipeThroughChannel(Ndjson.decodeSchema(Event)()), Stream
 ```
 
 `Ndjson.decodeString/encodeString` for string streams, `decode/encode` for
-bytes, `*Schema*` variants validate. `Msgpack` mirrors it. `Yaml.parse`,
+bytes, `*Schema*` variants validate. `Yaml.parse`,
 `Toml.parse`, `Ini.parse` are decode-only.
 
 ## Local state

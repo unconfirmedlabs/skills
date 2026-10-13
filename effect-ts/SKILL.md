@@ -48,17 +48,22 @@ no publication workflow. Cross-cutting modules compose at any level.
 
 ## Version and source discipline
 
-The checked baseline is **Effect 4.0.0-rc.115**, recorded in the
+The checked baseline is **Effect 4.0.3** (stable), recorded in the
 [source inventory](references/generated/modules.md). Inspect the target's
 manifest and lockfile first; this baseline is not permission to upgrade existing
-projects. Resolve an explicit v4 version for new work and compatible adapter peer
-ranges. Do not assume `latest` means v4 or every `@effect/*` package shares its
-version.
+projects. A project still on `4.0.0-rc.*` uses different import paths and some
+renamed APIs: read [migration](references/migration.md#effect-v4-release-candidates-to-40x)
+before applying this skill's paths. Pin an explicit version for new work and
+check adapter peer ranges; release-train `@effect/*` packages share the `effect`
+version, tooling packages need not.
 
 Read the matching source, declaration and relevant upstream test/example for APIs
 in use. Use the searchable inventory to discover features, then verify exact
-local overloads. Prefer public namespace subpath imports. `effect/unstable/*` is
-public but version-sensitive; `internal` is implementation evidence, never an
+local overloads. Prefer public namespace subpath imports. There is no
+`effect/unstable/*` path in 4.0.x; modules such as `effect/http`,
+`effect/http-api`, `effect/cli`, `effect/sql`, `effect/persistence` and
+`effect/ai` are marked `@stability unstable` (may break in minor releases; see the
+module map's Stability column). `internal` is implementation evidence, never an
 application import. Follow [source and coverage](references/source-and-coverage.md).
 
 ## Shared correctness rules
